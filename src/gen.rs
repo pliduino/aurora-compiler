@@ -40,6 +40,7 @@ struct CompiledFunction {
     defined: bool,
     id: FuncId,
     param_count: usize,
+    return_count: usize,
 }
 
 pub struct FunctionGenerator<'a> {
@@ -106,7 +107,11 @@ impl<'a> FunctionGenerator<'a> {
                         arguments?.into_iter().map(|arg| arg.value).collect();
 
                     let call = self.builder.ins().call(local_func, &arguments);
-                    ParseExpr::new(self.builder.inst_results(call)[0])
+                    if func.return_count == 1 {
+                        return Ok(ParseExpr::new(self.builder.inst_results(call)[0]));
+                    }
+                    let val = self.builder.ins().f64const(0.0);
+                    ParseExpr::new(val)
                 }
                 None => return Err(Error::Undefined("function")),
             },
@@ -198,6 +203,7 @@ impl Generator {
                         defined: false,
                         id,
                         param_count: prototype.parameters.len(),
+                        return_count: prototype.return_type.is_empty().into(),
                     },
                 );
                 Ok(id)

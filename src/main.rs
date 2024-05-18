@@ -82,7 +82,6 @@ fn main() -> Result<()> {
 }
 
 #[no_mangle]
-pub extern "C" fn putfloatd(float: f64) -> f64 {
+pub extern "C" fn putfloatd(float: f64) {
     println!("{}", float);
-    0.0
 }

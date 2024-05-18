@@ -1,11 +1,10 @@
 extern sin(x) f64;
 extern cos(x) f64;
-extern putfloatd(x) f64;
+extern putfloatd(x);
 
 fn test_func(x, y) f64 { 
     sin(x) + cos(y);
     return sin(x);
-    return 2;
 }
 
 fn main() {
