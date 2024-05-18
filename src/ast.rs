@@ -13,6 +13,7 @@ pub enum Expr {
     Call(String, Vec<Expr>),
     Number(f64),
     Variable(String),
+    Block(Vec<Expr>),
 }
 
 #[derive(Debug)]

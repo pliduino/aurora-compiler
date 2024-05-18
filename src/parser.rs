@@ -29,8 +29,38 @@ impl<R: Read> Parser<R> {
     pub fn definition(&mut self) -> Result<Function> {
         self.eat(Token::Def)?;
         let prototype = self.prototype()?;
-        let body = self.expr()?;
+        let peek = self.lexer.peek()?;
+
+        let mut is_oneline = true;
+
+        if *peek == Token::OpenBracket {
+            is_oneline = false;
+        }
+
+        let body;
+        if is_oneline {
+            body = self.expr()?;
+            self.eat(Token::Semicolon)?;
+        } else {
+            body = self.block()?;
+        }
+
         Ok(Function { prototype, body })
+    }
+
+    fn block(&mut self) -> Result<Expr> {
+        let mut exprs: Vec<Expr> = vec![];
+        self.eat(Token::OpenBracket)?;
+        loop {
+            exprs.push(self.expr()?);
+            self.eat(Token::Semicolon)?;
+            let peek = self.lexer.peek()?;
+            if *peek == Token::CloseBracket {
+                self.eat(Token::CloseBracket)?;
+                break;
+            }
+        }
+        Ok(Expr::Block(exprs))
     }
 
     fn eat(&mut self, token: Token) -> Result<()> {

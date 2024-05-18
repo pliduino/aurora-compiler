@@ -45,6 +45,8 @@ impl<R: Read> Lexer<R> {
                         b',' => Token::Comma,
                         b'(' => Token::OpenParen,
                         b')' => Token::CloseParen,
+                        b'{' => Token::OpenBracket,
+                        b'}' => Token::CloseBracket,
                         _ => return Err(UnknownChar(byte as char)),
                     };
 
@@ -164,4 +166,6 @@ pub enum Token {
     OpenParen,
     CloseParen,
     Comma,
+    OpenBracket,
+    CloseBracket,
 }

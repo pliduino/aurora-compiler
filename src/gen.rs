@@ -88,6 +88,13 @@ impl<'a> FunctionGenerator<'a> {
                 }
                 None => return Err(Error::Undefined("function")),
             },
+            Expr::Block(exprs) => {
+                let mut values: Value = self.builder.ins().f64const(0.0);
+                for expr in exprs {
+                    values = self.expr(expr)?;
+                }
+                values
+            }
         };
         Ok(value)
     }
@@ -153,19 +160,25 @@ impl Generator {
         let mut context = self.module.make_context();
         let signature = &mut context.func.signature;
         let parameters = &function.prototype.parameters;
+
+        // Parameters types
         for _parameter in parameters {
             signature.params.push(AbiParam::new(types::F64));
         }
+        // Return type
         signature.returns.push(AbiParam::new(types::F64));
+
         let function_name = function.prototype.function_name.to_string();
         let func_id = self.prototype(&function.prototype, Linkage::Export)?;
 
+        // Creates new block for function
         let mut builder = FunctionBuilder::new(&mut context.func, &mut self.builder_context);
         let entry_block = builder.create_ebb();
         builder.append_ebb_params_for_function_params(entry_block);
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
+        // Add parameters to stack
         let mut values = HashMap::new();
         for (i, name) in parameters.iter().enumerate() {
             let val = builder.ebb_params(entry_block)[i];

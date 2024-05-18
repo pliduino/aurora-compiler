@@ -1,6 +1,9 @@
 extern sin(x);
 extern cos(x);
 
-def test_func(x y) sin(x) + cos(y);
+def test_func(x y) { 
+    sin(x) + cos(y);
+    sin(x);
+}
 
 test_func(20.0, 5.0);

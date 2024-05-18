@@ -1,7 +1,4 @@
-use std::{
-    fs::File,
-    io::{stdin, stdout, Write},
-};
+use std::fs::File;
 
 use cranelift_module::Linkage;
 use error::Result;
