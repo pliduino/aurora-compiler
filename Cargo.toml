@@ -1,0 +1,12 @@
+[package]
+name = "aurora-compiler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cranelift = "0.30"
+cranelift-module = "0.30"
+cranelift-simplejit = "0.30"
+cranelift-preopt = "0.30"
+target-lexicon = "0.3.0"
+
