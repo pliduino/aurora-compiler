@@ -4,6 +4,8 @@ use std::{io, num::ParseFloatError, result};
 use cranelift::codegen::CodegenError;
 use cranelift_module::ModuleError;
 
+use crate::lexer::Token;
+
 use self::Error::*;
 
 pub type Result<T> = result::Result<T, Error>;
@@ -16,6 +18,7 @@ pub enum Error {
     UnknownChar(char),
     Undefined(&'static str),
     Unexpected(&'static str),
+    UnexpectedToken(Token, Token),
     WrongArgumentCount,
     FunctionRedef,
     FunctionRedefWithDifferentParams,
@@ -23,7 +26,7 @@ pub enum Error {
 
 impl Debug for Error {
     fn fmt(&self, formatter: &mut Formatter) -> fmt::Result {
-        match *self {
+        match self {
             Io(ref error) => error.fmt(formatter),
             ParseFloat(ref error) => error.fmt(formatter),
             UnknownChar(char) => write!(formatter, "unknown char `{}`", char),
@@ -37,6 +40,11 @@ impl Debug for Error {
             ),
             CraneliftModule(ref error) => error.fmt(formatter),
             CraneliftCodegen(ref error) => error.fmt(formatter),
+            UnexpectedToken(expected, got) => write!(
+                formatter,
+                "token, was expecting '{}' but got '{}'",
+                expected, got,
+            ),
         }
     }
 }

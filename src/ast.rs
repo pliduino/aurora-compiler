@@ -14,6 +14,7 @@ pub enum Expr {
     Number(f64),
     Variable(String),
     Block(Vec<Expr>),
+    Return(Box<Expr>),
 }
 
 #[derive(Debug)]
@@ -26,4 +27,5 @@ pub struct Function {
 pub struct Prototype {
     pub function_name: String,
     pub parameters: Vec<String>,
+    pub return_type: String,
 }

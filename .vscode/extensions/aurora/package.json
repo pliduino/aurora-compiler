@@ -1,0 +1,25 @@
+{
+  "name": "aurora",
+  "displayName": "Aurora",
+  "description": "Aurora syntax highlighting",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.89.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "aurora",
+      "aliases": ["Aurora", "aurora"],
+      "extensions": [".au"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "aurora",
+      "scopeName": "source.aurora",
+      "path": "./syntaxes/aurora.tmLanguage.json"
+    }]
+  }
+}

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::{Bytes, Read},
     iter::Peekable,
 };
@@ -81,8 +82,9 @@ impl<R: Read> Lexer<R> {
         }
 
         let token = match identifier.as_str() {
-            "def" => Token::Def,
+            "fn" => Token::Def,
             "extern" => Token::Extern,
+            "return" => Token::Return,
             _ => Token::Identifier(identifier),
         };
 
@@ -168,4 +170,28 @@ pub enum Token {
     Comma,
     OpenBracket,
     CloseBracket,
+    Return,
+}
+
+impl Display for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Token::Eof => todo!(),
+            Token::Def => write!(f, "fn"),
+            Token::Extern => write!(f, "extern"),
+            Token::Identifier(_) => todo!(),
+            Token::Number(_) => todo!(),
+            Token::LessThan => write!(f, "<"),
+            Token::Minus => write!(f, "-"),
+            Token::Plus => write!(f, "+"),
+            Token::Star => write!(f, "*"),
+            Token::Semicolon => write!(f, ";"),
+            Token::OpenParen => write!(f, "("),
+            Token::CloseParen => write!(f, ")"),
+            Token::Comma => write!(f, ","),
+            Token::OpenBracket => write!(f, "{{"),
+            Token::CloseBracket => write!(f, "}}"),
+            Token::Return => write!(f, "return"),
+        }
+    }
 }

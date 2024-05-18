@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use cranelift_module::Linkage;
-use error::Result;
+use error::{Error, Result};
 use lexer::Lexer;
 use parser::Parser;
 
@@ -56,20 +56,31 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            _ => match parser.toplevel().and_then(|expr| generator.function(expr)) {
-                Ok(function) => println!("{}", function()),
-                Err(error) => {
-                    parser.lexer.next_token()?;
-                    eprintln!("Error: {:?}", error);
-                }
-            },
+            _ => return Err(Error::Unexpected("Unexpected top level token")),
+            // match parser.toplevel().and_then(|func| generator.function(func)) {
+            //     Ok(function) => {
+            //         function();
+            //     }
+            //     Err(error) => {
+            //         parser.lexer.next_token()?;
+            //         eprintln!("Error: {:?}", error);
+            //     }
+            // }
         }
     }
-    Ok(())
+    match generator.get_function_executable::<f64>("main".to_string()) {
+        Some(entrypoint) => {
+            entrypoint();
+            return Ok(());
+        }
+        None => Err(Error::Unexpected(
+            "No entrypoint defined, please define a \"main\" function",
+        )),
+    }
 }
 
 #[no_mangle]
-pub extern "C" fn putchard(char: f64) -> f64 {
-    println!("{}", char as u8 as char);
+pub extern "C" fn putfloatd(float: f64) -> f64 {
+    println!("{}", float);
     0.0
 }

@@ -49,25 +49,46 @@ pub struct FunctionGenerator<'a> {
     values: HashMap<String, Variable>,
 }
 
+struct ParseExpr {
+    pub value: Value,
+    pub is_return: bool,
+}
+
+impl ParseExpr {
+    pub fn new(value: Value) -> Self {
+        Self {
+            value,
+            is_return: false,
+        }
+    }
+
+    pub fn new_return(value: Value) -> Self {
+        Self {
+            value,
+            is_return: true,
+        }
+    }
+}
+
 impl<'a> FunctionGenerator<'a> {
-    fn expr(&mut self, expr: Expr) -> Result<Value> {
+    fn expr(&mut self, expr: Expr) -> Result<ParseExpr> {
         let value = match expr {
-            Expr::Number(num) => self.builder.ins().f64const(num),
+            Expr::Number(num) => ParseExpr::new(self.builder.ins().f64const(num)),
             Expr::Variable(name) => match self.values.get(&name) {
-                Some(&variable) => self.builder.use_var(variable),
+                Some(&variable) => ParseExpr::new(self.builder.use_var(variable)),
                 None => return Err(Error::Undefined("variable")),
             },
             Expr::Binary(op, left, right) => {
-                let left = self.expr(*left)?;
-                let right = self.expr(*right)?;
+                let left = self.expr(*left)?.value;
+                let right = self.expr(*right)?.value;
                 match op {
-                    BinaryOp::Plus => self.builder.ins().fadd(left, right),
-                    BinaryOp::Minus => self.builder.ins().fsub(left, right),
-                    BinaryOp::Times => self.builder.ins().fmul(left, right),
+                    BinaryOp::Plus => ParseExpr::new(self.builder.ins().fadd(left, right)),
+                    BinaryOp::Minus => ParseExpr::new(self.builder.ins().fsub(left, right)),
+                    BinaryOp::Times => ParseExpr::new(self.builder.ins().fmul(left, right)),
                     BinaryOp::LessThan => {
                         let boolean = self.builder.ins().fcmp(FloatCC::LessThan, left, right);
                         let int = self.builder.ins().bint(types::I32, boolean);
-                        self.builder.ins().fcvt_from_sint(types::F64, int)
+                        ParseExpr::new(self.builder.ins().fcvt_from_sint(types::F64, int))
                     }
                 }
             }
@@ -81,19 +102,27 @@ impl<'a> FunctionGenerator<'a> {
                         .declare_func_in_func(func.id, &mut self.builder.func);
                     let arguments: Result<Vec<_>> =
                         args.into_iter().map(|arg| self.expr(arg)).collect();
-                    let arguments = arguments?;
+                    let arguments: Vec<Value> =
+                        arguments?.into_iter().map(|arg| arg.value).collect();
 
                     let call = self.builder.ins().call(local_func, &arguments);
-                    self.builder.inst_results(call)[0]
+                    ParseExpr::new(self.builder.inst_results(call)[0])
                 }
                 None => return Err(Error::Undefined("function")),
             },
             Expr::Block(exprs) => {
-                let mut values: Value = self.builder.ins().f64const(0.0);
+                let mut value: Option<ParseExpr> = None;
                 for expr in exprs {
-                    values = self.expr(expr)?;
+                    value = Some(self.expr(expr)?);
                 }
-                values
+                match value {
+                    Some(value) => value,
+                    None => ParseExpr::new_return(self.builder.ins().f64const(0.0)),
+                }
+            }
+            Expr::Return(expr) => {
+                let value = self.expr(*expr)?;
+                ParseExpr::new_return(value.value)
             }
         };
         Ok(value)
@@ -121,6 +150,15 @@ impl Generator {
         }
     }
 
+    pub fn get_function_executable<T>(&mut self, func_name: String) -> Option<fn() -> T> {
+        match self.functions.get(&func_name) {
+            Some(func) => unsafe {
+                Some(mem::transmute(self.module.get_finalized_function(func.id)))
+            },
+            None => None,
+        }
+    }
+
     pub fn prototype(&mut self, prototype: &Prototype, linkage: Linkage) -> Result<FuncId> {
         let function_name = &prototype.function_name;
         let parameters = &prototype.parameters;
@@ -130,7 +168,14 @@ impl Generator {
                 for _parameter in parameters {
                     signature.params.push(AbiParam::new(types::F64));
                 }
-                signature.returns.push(AbiParam::new(types::F64));
+                let return_type = match prototype.return_type.as_str() {
+                    "f64" => Some(types::F64),
+                    _ => None,
+                };
+                if let Some(x) = return_type {
+                    signature.returns.push(AbiParam::new(x));
+                }
+
                 let id = self
                     .module
                     .declare_function(&function_name, linkage, &signature)?;
@@ -156,7 +201,7 @@ impl Generator {
         }
     }
 
-    pub fn function(&mut self, function: Function) -> Result<fn() -> f64> {
+    pub fn function(&mut self, function: Function) -> Result<()> {
         let mut context = self.module.make_context();
         let signature = &mut context.func.signature;
         let parameters = &function.prototype.parameters;
@@ -205,7 +250,14 @@ impl Generator {
                 return Err(error);
             }
         };
-        generator.builder.ins().return_(&[return_value]);
+
+        if return_value.is_return {
+            generator.builder.ins().return_(&[return_value.value]);
+        } else {
+            let empty_return_value = generator.builder.ins().f64const(0.0);
+            generator.builder.ins().return_(&[empty_return_value]);
+        }
+
         generator.builder.finalize();
         // optimize(&mut context, &*self.module.isa())?;
         println!("{}", context.func.display(None).to_string());
@@ -213,7 +265,6 @@ impl Generator {
         self.module.define_function(func_id, &mut context)?;
         self.module.clear_context(&mut context);
         self.module.finalize_definitions();
-
-        unsafe { Ok(mem::transmute(self.module.get_finalized_function(func_id))) }
+        Ok(())
     }
 }

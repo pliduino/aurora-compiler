@@ -8,7 +8,6 @@ use crate::{
 
 pub struct Parser<R: Read> {
     bin_precedence: HashMap<BinaryOp, i32>,
-    index: usize,
     pub lexer: Lexer<R>,
 }
 
@@ -21,7 +20,6 @@ impl<R: Read> Parser<R> {
         bin_precedence.insert(BinaryOp::Times, 40);
         return Self {
             bin_precedence,
-            index: 0,
             lexer,
         };
     }
@@ -39,8 +37,16 @@ impl<R: Read> Parser<R> {
 
         let body;
         if is_oneline {
-            body = self.expr()?;
-            self.eat(Token::Semicolon)?;
+            let peek = self.lexer.peek()?;
+            if *peek == Token::Return {
+                self.eat(Token::Return)?;
+                let expr = self.expr()?;
+                self.eat(Token::Semicolon)?;
+                body = Expr::Return(Box::new(expr));
+            } else {
+                body = self.expr()?;
+                self.eat(Token::Semicolon)?;
+            }
         } else {
             body = self.block()?;
         }
@@ -52,7 +58,13 @@ impl<R: Read> Parser<R> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
         loop {
-            exprs.push(self.expr()?);
+            let peek = self.lexer.peek()?;
+            if *peek == Token::Return {
+                self.eat(Token::Return)?;
+                exprs.push(Expr::Return(Box::new(self.expr()?)));
+            } else {
+                exprs.push(self.expr()?);
+            }
             self.eat(Token::Semicolon)?;
             let peek = self.lexer.peek()?;
             if *peek == Token::CloseBracket {
@@ -66,20 +78,20 @@ impl<R: Read> Parser<R> {
     fn eat(&mut self, token: Token) -> Result<()> {
         let current_token = self.lexer.next_token()?;
         if current_token != token {
-            return Err(Error::Unexpected("token"));
+            return Err(Error::UnexpectedToken(token, current_token));
         }
         Ok(())
     }
 
     fn prototype(&mut self) -> Result<Prototype> {
         let function_name = self.identifier()?;
-        self.eat(Token::OpenParen)?;
         let parameters = self.parameters()?;
-        self.eat(Token::CloseParen)?;
+        let return_type = self.identifier()?;
 
         Ok(Prototype {
             function_name,
             parameters,
+            return_type,
         })
     }
 
@@ -96,19 +108,38 @@ impl<R: Read> Parser<R> {
     }
 
     fn parameters(&mut self) -> Result<Vec<String>> {
+        self.eat(Token::OpenParen)?;
         let mut params = vec![];
+        let mut accept_more = true;
         loop {
-            match *self.lexer.peek()? {
+            match self.lexer.peek()? {
                 Token::Identifier(_) => {
+                    if !accept_more {
+                        return Err(Error::Unexpected("operator, expected ','"));
+                    }
+                    accept_more = false;
+
                     let ident = match self.lexer.next_token()? {
                         Token::Identifier(ident) => ident,
                         _ => unreachable!(),
                     };
                     params.push(ident);
                 }
-                _ => break,
+                Token::CloseParen => {
+                    self.eat(Token::CloseParen)?;
+                    break;
+                }
+                Token::Comma => {
+                    self.eat(Token::Comma)?;
+                    accept_more = true;
+                }
+                x => {
+                    dbg!(x);
+                    return Err(Error::Unexpected("token"));
+                }
             }
         }
+
         Ok(params)
     }
 
@@ -204,17 +235,5 @@ impl<R: Read> Parser<R> {
             Some(&precedence) => Ok(precedence),
             None => Err(Error::Undefined("operator")),
         }
-    }
-
-    pub fn toplevel(&mut self) -> Result<Function> {
-        let body = self.expr()?;
-        self.index += 1;
-        Ok(Function {
-            body,
-            prototype: Prototype {
-                function_name: format!("__anon_{}", self.index),
-                parameters: vec![],
-            },
-        })
     }
 }
