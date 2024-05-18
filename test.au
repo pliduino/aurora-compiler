@@ -8,5 +8,5 @@ fn test_func(x, y) f64 {
 }
 
 fn main() {
-    putfloatd(test_func(20, 5));
+    putfloatd(5);
 }

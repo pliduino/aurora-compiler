@@ -51,21 +51,35 @@ pub struct FunctionGenerator<'a> {
 }
 
 struct ParseExpr {
-    pub value: Value,
+    pub value: Option<Value>,
     pub is_return: bool,
 }
 
 impl ParseExpr {
-    pub fn new(value: Value) -> Self {
+    pub fn new(value: Option<Value>) -> Self {
         Self {
-            value,
+            value: value,
             is_return: false,
         }
     }
 
-    pub fn new_return(value: Value) -> Self {
+    pub fn new_return(value: Option<Value>) -> Self {
         Self {
-            value,
+            value: value,
+            is_return: true,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            value: None,
+            is_return: false,
+        }
+    }
+
+    pub fn empty_return() -> Self {
+        Self {
+            value: None,
             is_return: true,
         }
     }
@@ -74,23 +88,23 @@ impl ParseExpr {
 impl<'a> FunctionGenerator<'a> {
     fn expr(&mut self, expr: Expr) -> Result<ParseExpr> {
         let value = match expr {
-            Expr::Number(num) => ParseExpr::new(self.builder.ins().f64const(num)),
+            Expr::Number(num) => ParseExpr::new(Some(self.builder.ins().f64const(num))),
             Expr::Variable(name) => match self.values.get(&name) {
-                Some(&variable) => ParseExpr::new(self.builder.use_var(variable)),
+                Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
                 None => return Err(Error::Undefined("variable")),
             },
             Expr::Binary(op, left, right) => {
-                let left = self.expr(*left)?.value;
-                let right = self.expr(*right)?.value;
+                let left = self.expr(*left)?.value.unwrap(); // TODO: unwrap these properly
+                let right = self.expr(*right)?.value.unwrap();
                 match op {
-                    BinaryOp::Plus => ParseExpr::new(self.builder.ins().fadd(left, right)),
-                    BinaryOp::Minus => ParseExpr::new(self.builder.ins().fsub(left, right)),
-                    BinaryOp::Times => ParseExpr::new(self.builder.ins().fmul(left, right)),
-                    BinaryOp::LessThan => {
-                        let boolean = self.builder.ins().fcmp(FloatCC::LessThan, left, right);
-                        let int = self.builder.ins().bint(types::I32, boolean);
-                        ParseExpr::new(self.builder.ins().fcvt_from_sint(types::F64, int))
-                    }
+                    BinaryOp::Plus => ParseExpr::new(Some(self.builder.ins().fadd(left, right))),
+                    BinaryOp::Minus => ParseExpr::new(Some(self.builder.ins().fsub(left, right))),
+                    BinaryOp::Times => ParseExpr::new(Some(self.builder.ins().fmul(left, right))),
+                    BinaryOp::LessThan => ParseExpr::new(Some(self.builder.ins().fcmp(
+                        FloatCC::LessThan,
+                        left,
+                        right,
+                    ))),
                 }
             }
             Expr::Call(name, args) => match self.functions.get(&name) {
@@ -103,15 +117,18 @@ impl<'a> FunctionGenerator<'a> {
                         .declare_func_in_func(func.id, &mut self.builder.func);
                     let arguments: Result<Vec<_>> =
                         args.into_iter().map(|arg| self.expr(arg)).collect();
-                    let arguments: Vec<Value> =
-                        arguments?.into_iter().map(|arg| arg.value).collect();
+                    let arguments: Vec<Value> = arguments?
+                        .into_iter()
+                        .map(|arg| arg.value.unwrap()) // TODO: Properly unwrap arguments
+                        .collect();
 
                     let call = self.builder.ins().call(local_func, &arguments);
-                    if func.return_count == 1 {
-                        return Ok(ParseExpr::new(self.builder.inst_results(call)[0]));
+                    println!("here");
+                    if func.return_count > 0 {
+                        // TODO: Current solution is not the best
+                        return Ok(ParseExpr::new(Some(self.builder.inst_results(call)[0])));
                     }
-                    let val = self.builder.ins().f64const(0.0);
-                    ParseExpr::new(val)
+                    ParseExpr::empty()
                 }
                 None => return Err(Error::Undefined("function")),
             },
@@ -122,13 +139,12 @@ impl<'a> FunctionGenerator<'a> {
                         return Ok(parse_expr);
                     }
                 }
-                let val = self.builder.ins().f64const(0.0);
                 self.builder.ins().return_(&[]);
-                ParseExpr::new(val)
+                ParseExpr::empty()
             }
             Expr::Return(expr) => {
                 let value = self.expr(*expr)?;
-                self.builder.ins().return_(&[value.value]);
+                self.builder.ins().return_(&[value.value.unwrap()]); // TODO: Properly unwrap this
                 ParseExpr::new_return(value.value)
             }
         };
@@ -203,7 +219,11 @@ impl Generator {
                         defined: false,
                         id,
                         param_count: prototype.parameters.len(),
-                        return_count: prototype.return_type.is_empty().into(),
+                        return_count: if prototype.return_type == "void" {
+                            0
+                        } else {
+                            1
+                        },
                     },
                 );
                 Ok(id)
