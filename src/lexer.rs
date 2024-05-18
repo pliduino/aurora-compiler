@@ -31,7 +31,7 @@ impl<R: Read> Lexer<R> {
                     self.bytes.next();
                     self.next_token()
                 }
-                b'a'..=b'z' | b'A'..=b'Z' => self.identifier(),
+                b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.identifier(),
                 b'0'..=b'9' | b'.' => self.number(),
                 b'#' => self.comment(),
                 _ => {
