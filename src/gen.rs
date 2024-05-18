@@ -3,7 +3,7 @@ use std::{collections::HashMap, mem, str::FromStr};
 use cranelift::{
     codegen::{
         entity::EntityRef,
-        ir::{condcodes::FloatCC, types, AbiParam, InstBuilder, Value},
+        ir::{condcodes::FloatCC, types, AbiParam, InstBuilder, Signature, Type, Value},
         isa,
         settings::{self, Configurable},
     },
@@ -111,17 +111,19 @@ impl<'a> FunctionGenerator<'a> {
                 None => return Err(Error::Undefined("function")),
             },
             Expr::Block(exprs) => {
-                let mut value: Option<ParseExpr> = None;
                 for expr in exprs {
-                    value = Some(self.expr(expr)?);
+                    let parse_expr = self.expr(expr)?;
+                    if parse_expr.is_return {
+                        return Ok(parse_expr);
+                    }
                 }
-                match value {
-                    Some(value) => value,
-                    None => ParseExpr::new_return(self.builder.ins().f64const(0.0)),
-                }
+                let val = self.builder.ins().f64const(0.0);
+                self.builder.ins().return_(&[]);
+                ParseExpr::new(val)
             }
             Expr::Return(expr) => {
                 let value = self.expr(*expr)?;
+                self.builder.ins().return_(&[value.value]);
                 ParseExpr::new_return(value.value)
             }
         };
@@ -150,31 +152,42 @@ impl Generator {
         }
     }
 
-    pub fn get_function_executable<T>(&mut self, func_name: String) -> Option<fn() -> T> {
+    pub fn get_function_exe<T: Fn() -> K, K>(&mut self, func_name: String) -> Option<T> {
         match self.functions.get(&func_name) {
             Some(func) => unsafe {
-                Some(mem::transmute(self.module.get_finalized_function(func.id)))
+                let exe = self.module.get_finalized_function(func.id);
+                Some(mem::transmute_copy(&exe))
             },
             None => None,
         }
     }
 
+    fn signature_append_from_prototype(&self, prototype: &Prototype, signature: &mut Signature) {
+        for _parameter in &prototype.parameters {
+            signature.params.push(AbiParam::new(types::F64));
+        }
+
+        let return_type = Generator::get_type_from_str(&prototype.return_type);
+        if let Some(tp) = return_type {
+            signature.returns.push(AbiParam::new(tp));
+        }
+    }
+
+    fn get_type_from_str(str: &str) -> Option<Type> {
+        match str {
+            "f64" => Some(types::F64),
+            "void" => None,
+            _ => None, // TODO: Trigger error
+        }
+    }
+
     pub fn prototype(&mut self, prototype: &Prototype, linkage: Linkage) -> Result<FuncId> {
         let function_name = &prototype.function_name;
-        let parameters = &prototype.parameters;
+
         match self.functions.get(function_name) {
             None => {
                 let mut signature = self.module.make_signature();
-                for _parameter in parameters {
-                    signature.params.push(AbiParam::new(types::F64));
-                }
-                let return_type = match prototype.return_type.as_str() {
-                    "f64" => Some(types::F64),
-                    _ => None,
-                };
-                if let Some(x) = return_type {
-                    signature.returns.push(AbiParam::new(x));
-                }
+                self.signature_append_from_prototype(prototype, &mut signature);
 
                 let id = self
                     .module
@@ -184,7 +197,7 @@ impl Generator {
                     CompiledFunction {
                         defined: false,
                         id,
-                        param_count: parameters.len(),
+                        param_count: prototype.parameters.len(),
                     },
                 );
                 Ok(id)
@@ -193,7 +206,7 @@ impl Generator {
                 if function.defined {
                     return Err(Error::FunctionRedef);
                 }
-                if function.param_count != parameters.len() {
+                if function.param_count != prototype.parameters.len() {
                     return Err(Error::FunctionRedefWithDifferentParams);
                 }
                 Ok(function.id)
@@ -203,15 +216,10 @@ impl Generator {
 
     pub fn function(&mut self, function: Function) -> Result<()> {
         let mut context = self.module.make_context();
-        let signature = &mut context.func.signature;
+        let mut signature = &mut context.func.signature;
         let parameters = &function.prototype.parameters;
 
-        // Parameters types
-        for _parameter in parameters {
-            signature.params.push(AbiParam::new(types::F64));
-        }
-        // Return type
-        signature.returns.push(AbiParam::new(types::F64));
+        self.signature_append_from_prototype(&function.prototype, &mut signature);
 
         let function_name = function.prototype.function_name.to_string();
         let func_id = self.prototype(&function.prototype, Linkage::Export)?;
@@ -242,7 +250,7 @@ impl Generator {
             values,
         };
 
-        let return_value = match generator.expr(function.body) {
+        match generator.expr(function.body) {
             Ok(value) => value,
             Err(error) => {
                 generator.builder.finalize();
@@ -250,13 +258,6 @@ impl Generator {
                 return Err(error);
             }
         };
-
-        if return_value.is_return {
-            generator.builder.ins().return_(&[return_value.value]);
-        } else {
-            let empty_return_value = generator.builder.ins().f64const(0.0);
-            generator.builder.ins().return_(&[empty_return_value]);
-        }
 
         generator.builder.finalize();
         // optimize(&mut context, &*self.module.isa())?;

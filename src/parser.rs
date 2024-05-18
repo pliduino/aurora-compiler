@@ -27,29 +27,10 @@ impl<R: Read> Parser<R> {
     pub fn definition(&mut self) -> Result<Function> {
         self.eat(Token::Def)?;
         let prototype = self.prototype()?;
-        let peek = self.lexer.peek()?;
-
-        let mut is_oneline = true;
-
-        if *peek == Token::OpenBracket {
-            is_oneline = false;
-        }
 
         let body;
-        if is_oneline {
-            let peek = self.lexer.peek()?;
-            if *peek == Token::Return {
-                self.eat(Token::Return)?;
-                let expr = self.expr()?;
-                self.eat(Token::Semicolon)?;
-                body = Expr::Return(Box::new(expr));
-            } else {
-                body = self.expr()?;
-                self.eat(Token::Semicolon)?;
-            }
-        } else {
-            body = self.block()?;
-        }
+
+        body = self.block()?;
 
         Ok(Function { prototype, body })
     }
@@ -86,7 +67,10 @@ impl<R: Read> Parser<R> {
     fn prototype(&mut self) -> Result<Prototype> {
         let function_name = self.identifier()?;
         let parameters = self.parameters()?;
-        let return_type = self.identifier()?;
+        let return_type = match self.lexer.peek()? {
+            Token::Identifier(_) => self.identifier()?,
+            _ => "void".to_string(),
+        };
 
         Ok(Prototype {
             function_name,

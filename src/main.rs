@@ -68,14 +68,16 @@ fn main() -> Result<()> {
             // }
         }
     }
-    match generator.get_function_executable::<f64>("main".to_string()) {
+    match generator.get_function_exe::<fn() -> (), ()>("main".to_string()) {
         Some(entrypoint) => {
             entrypoint();
             return Ok(());
         }
-        None => Err(Error::Unexpected(
-            "No entrypoint defined, please define a \"main\" function",
-        )),
+        None => {
+            return Err(Error::Unexpected(
+                "No entrypoint defined, please define a \"main\" function",
+            ))
+        }
     }
 }
 

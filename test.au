@@ -5,8 +5,9 @@ extern putfloatd(x) f64;
 fn test_func(x, y) f64 { 
     sin(x) + cos(y);
     return sin(x);
+    return 2;
 }
 
-fn main() f64 {
-    putfloatd(test_func(20.0, 5.0));
+fn main() {
+    putfloatd(test_func(20, 5));
 }
