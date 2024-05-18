@@ -42,7 +42,12 @@ impl<R: Read> Parser<R> {
             let peek = self.lexer.peek()?;
             if *peek == Token::Return {
                 self.eat(Token::Return)?;
-                exprs.push(Expr::Return(Box::new(self.expr()?)));
+                let peek = self.lexer.peek()?;
+                if *peek == Token::Semicolon {
+                    exprs.push(Expr::Return(None));
+                } else {
+                    exprs.push(Expr::Return(Some(Box::new(self.expr()?))));
+                }
             } else {
                 exprs.push(self.expr()?);
             }

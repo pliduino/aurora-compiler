@@ -143,9 +143,17 @@ impl<'a> FunctionGenerator<'a> {
                 ParseExpr::empty()
             }
             Expr::Return(expr) => {
-                let value = self.expr(*expr)?;
-                self.builder.ins().return_(&[value.value.unwrap()]); // TODO: Properly unwrap this
-                ParseExpr::new_return(value.value)
+                match expr {
+                    Some(expr) => {
+                        let value = self.expr(*expr)?;
+                        self.builder.ins().return_(&[value.value.unwrap()]); // TODO: Properly unwrap this
+                        ParseExpr::new_return(value.value)
+                    }
+                    None => {
+                        self.builder.ins().return_(&[]);
+                        ParseExpr::empty_return()
+                    }
+                }
             }
         };
         Ok(value)

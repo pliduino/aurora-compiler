@@ -14,7 +14,7 @@ pub enum Expr {
     Number(f64),
     Variable(String),
     Block(Vec<Expr>),
-    Return(Box<Expr>),
+    Return(Option<Box<Expr>>),
 }
 
 #[derive(Debug)]
