@@ -1,16 +1,16 @@
-use std::{collections::HashMap, mem, str::FromStr};
+use std::collections::HashMap;
 
 use cranelift::{
     codegen::{
         entity::EntityRef,
         ir::{condcodes::FloatCC, types, AbiParam, InstBuilder, Signature, Type, Value},
-        isa,
-        settings::{self, Configurable},
+        isa::{self},
+        settings::{self},
     },
     frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
 };
-use cranelift_module::{FuncId, Linkage, Module};
-use cranelift_simplejit::{SimpleJITBackend, SimpleJITBuilder};
+use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
+use cranelift_object::{ObjectBuilder, ObjectModule};
 use target_lexicon::triple;
 
 use crate::{
@@ -53,7 +53,7 @@ struct CompiledFunction {
 pub struct FunctionGenerator<'a> {
     builder: FunctionBuilder<'a>,
     functions: &'a HashMap<String, CompiledFunction>,
-    module: &'a mut Module<SimpleJITBackend>,
+    module: &'a mut ObjectModule,
     variable_builder: &'a mut VariableBuilder,
     values: HashMap<String, Variable>,
 }
@@ -61,7 +61,7 @@ pub struct FunctionGenerator<'a> {
 pub struct Generator {
     builder_context: FunctionBuilderContext,
     functions: HashMap<String, CompiledFunction>,
-    module: Module<SimpleJITBackend>,
+    pub module: ObjectModule,
     variable_builder: VariableBuilder,
 }
 
@@ -103,7 +103,8 @@ impl ParseExpr {
 impl<'a> FunctionGenerator<'a> {
     fn expr(&mut self, expr: Expr) -> Result<ParseExpr> {
         let value = match expr {
-            Expr::Number(num) => ParseExpr::new(Some(self.builder.ins().f64const(num))),
+            Expr::Float(num) => ParseExpr::new(Some(self.builder.ins().f64const(num))),
+            Expr::Integer(num) => ParseExpr::new(Some(self.builder.ins().iconst(types::I64, num))),
             Expr::Variable(name) => match self.values.get(&name) {
                 Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
                 None => {
@@ -205,27 +206,33 @@ impl<'a> FunctionGenerator<'a> {
 
 impl Generator {
     pub fn new() -> Self {
-        let mut flag_builder = settings::builder();
-        flag_builder.set("opt_level", "best").expect("set optlevel");
-        let isa_builder = isa::lookup(triple!("x86_64-unknown-unknown-elf")).expect("isa");
-        let isa = isa_builder.finish(settings::Flags::new(flag_builder));
+        let shared_builder = settings::builder();
+        // shared_builder
+        //     .set("opt_level", "best")
+        //     .expect("set optlevel");
+        let shared_flags = settings::Flags::new(shared_builder);
+        let isa_builder = isa::lookup(triple!("x86_64-unknown-linux-gnu")).expect("isa");
+        let isa = isa_builder.finish(shared_flags).expect("Isa error");
+
+        let builder = ObjectBuilder::new(isa, "program", default_libcall_names()).unwrap(); //TODO: Fix tehse unwraps
+        let module = ObjectModule::new(builder);
         Self {
             builder_context: FunctionBuilderContext::new(),
             functions: HashMap::new(),
-            module: Module::new(SimpleJITBuilder::with_isa(isa)),
+            module,
             variable_builder: VariableBuilder::new(),
         }
     }
 
-    pub fn get_function_exe<T: Fn() -> K, K>(&mut self, func_name: String) -> Option<T> {
-        match self.functions.get(&func_name) {
-            Some(func) => unsafe {
-                let exe = self.module.get_finalized_function(func.id);
-                Some(mem::transmute_copy(&exe))
-            },
-            None => None,
-        }
-    }
+    // pub fn get_function_exe<T>(&mut self, func_name: String) -> Option<fn() -> T> {
+    //     match self.functions.get(&func_name) {
+    //         Some(func) => unsafe {
+    //             let exe = self.module.get_finalized_function(func.id);
+    //             Some(mem::transmute_copy(&exe))
+    //         },
+    //         None => None,
+    //     }
+    // }
 
     fn signature_append_from_prototype(&self, prototype: &Prototype, signature: &mut Signature) {
         for _parameter in &prototype.parameters {
@@ -241,6 +248,7 @@ impl Generator {
     fn get_type_from_str(str: &str) -> Option<Type> {
         match str {
             "f64" => Some(types::F64),
+            "i64" => Some(types::I64),
             "void" => None,
             _ => None, // TODO: Trigger error
         }
@@ -296,15 +304,15 @@ impl Generator {
 
         // Creates new block for function
         let mut builder = FunctionBuilder::new(&mut context.func, &mut self.builder_context);
-        let entry_block = builder.create_ebb();
-        builder.append_ebb_params_for_function_params(entry_block);
+        let entry_block = builder.create_block();
+        builder.append_block_params_for_function_params(entry_block);
         builder.switch_to_block(entry_block);
         builder.seal_block(entry_block);
 
         // Add parameters to stack
         let mut values = HashMap::new();
         for (i, name) in parameters.iter().enumerate() {
-            let val = builder.ebb_params(entry_block)[i];
+            let val = builder.block_params(entry_block)[i];
             let variable = self.variable_builder.create_var(&mut builder, val);
             values.insert(name.clone(), variable);
         }
@@ -332,12 +340,12 @@ impl Generator {
         };
 
         generator.builder.finalize();
-        // optimize(&mut context, &*self.module.isa())?;
-        println!("{}", context.func.display(None).to_string());
+        // optimize(&mut context, self.module.isa().to_owned());
+        println!("{}", context.func.display().to_string());
 
         self.module.define_function(func_id, &mut context)?;
         self.module.clear_context(&mut context);
-        self.module.finalize_definitions();
+        // self.module.finalize_definitions();
         Ok(())
     }
 }

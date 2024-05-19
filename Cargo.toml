@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-cranelift = "0.30"
-cranelift-module = "0.30"
-cranelift-simplejit = "0.30"
-cranelift-preopt = "0.30"
-target-lexicon = "0.3.0"
+cranelift = "0.107.2"
+cranelift-module = "0.107.2"
+cranelift-preopt = "0.92.1"
+target-lexicon = "0.12.14"
+cranelift-object = "0.107.2"
+cranelift-codegen = "0.107.2"
 

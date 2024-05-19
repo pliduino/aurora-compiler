@@ -56,7 +56,7 @@
 		"types": {
 			"patterns": [
 				{
-					"match": "\\b(f64)\\b"
+					"match": "\\b(f64|i64)\\b"
 				}
 			]
 		},

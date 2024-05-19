@@ -116,9 +116,9 @@ impl<R: Read> Lexer<R> {
         if let Some('.') = self.peek_char()? {
             self.bytes.next();
             let decimals = self.digits()?;
-            Ok(Token::Number(format!("{}.{}", integral, decimals).parse()?))
+            Ok(Token::Float(format!("{}.{}", integral, decimals).parse()?))
         } else {
-            Ok(Token::Number(integral.parse()?))
+            Ok(Token::Integer(integral.parse()?))
         }
     }
 
@@ -164,7 +164,8 @@ pub enum Token {
 
     // Primary
     Identifier(String),
-    Number(f64),
+    Integer(i64),
+    Float(f64),
 
     // Operators
     LessThan,
@@ -191,7 +192,8 @@ impl Display for Token {
             Token::Def => write!(f, "fn"),
             Token::Extern => write!(f, "extern"),
             Token::Identifier(id) => write!(f, "identifier: {}", id),
-            Token::Number(_) => todo!(),
+            Token::Float(_) => todo!(),
+            Token::Integer(_) => todo!(),
             Token::LessThan => write!(f, "<"),
             Token::Minus => write!(f, "-"),
             Token::Plus => write!(f, "+"),

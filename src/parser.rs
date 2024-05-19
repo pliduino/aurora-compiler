@@ -161,9 +161,13 @@ impl<R: Read> Parser<R> {
 
     fn primary(&mut self) -> Result<Expr> {
         match *self.lexer.peek(0)? {
-            Token::Number(number) => {
+            Token::Float(f) => {
                 self.lexer.next_token()?;
-                Ok(Expr::Number(number))
+                Ok(Expr::Float(f))
+            }
+            Token::Integer(i) => {
+                self.lexer.next_token()?;
+                Ok(Expr::Integer(i))
             }
             Token::OpenParen => {
                 self.eat(Token::OpenParen)?;

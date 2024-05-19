@@ -2,7 +2,7 @@
 
 extern sin(x) f64;
 extern cos(x) f64;
-extern putfloatd(x);
+extern putf(x);
 
 fn test_func(x, y) f64 { 
     let e;
@@ -11,7 +11,7 @@ fn test_func(x, y) f64 {
     return e + sin(z);
 }
 
-fn main() {
-    putfloatd(test_func(1.0, 2.0));
-    return;
+fn main() i64 {
+    putf(test_func(1.0, 2.0));
+    return 0;
 }

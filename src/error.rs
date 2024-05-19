@@ -1,4 +1,5 @@
 use std::fmt::{self, Debug, Formatter};
+use std::num::ParseIntError;
 use std::{io, num::ParseFloatError, result};
 
 use cranelift::codegen::CodegenError;
@@ -15,6 +16,7 @@ pub enum Error {
     CraneliftModule(ModuleError),
     Io(io::Error),
     ParseFloat(ParseFloatError),
+    ParseInt(ParseIntError),
     UnknownChar(char),
     Undefined(&'static str),
     Unexpected(&'static str),
@@ -29,6 +31,7 @@ impl Debug for Error {
         match self {
             Io(ref error) => error.fmt(formatter),
             ParseFloat(ref error) => error.fmt(formatter),
+            ParseInt(ref error) => error.fmt(formatter),
             UnknownChar(char) => write!(formatter, "unknown char `{}`", char),
             Undefined(msg) => write!(formatter, "undefined {}", msg),
             Unexpected(msg) => write!(formatter, "unexpected {}", msg),
@@ -71,5 +74,11 @@ impl From<ModuleError> for Error {
 impl From<CodegenError> for Error {
     fn from(error: CodegenError) -> Self {
         CraneliftCodegen(error)
+    }
+}
+
+impl From<ParseIntError> for Error {
+    fn from(error: ParseIntError) -> Self {
+        ParseInt(error)
     }
 }
