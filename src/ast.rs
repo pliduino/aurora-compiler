@@ -13,7 +13,7 @@ pub enum Expr {
     Call(String, Vec<Expr>),
     Integer(i64),
     Float(f64),
-    Let(String, Option<Box<Expr>>),
+    Let(String, String, Option<Box<Expr>>), // Name Type Assign
     Assign(String, Box<Expr>),
     Variable(String),
     Block(Vec<Expr>),

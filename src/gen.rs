@@ -173,11 +173,12 @@ impl<'a> FunctionGenerator<'a> {
                     }
                 }
             }
-            Expr::Let(name, int_expr) => match int_expr {
+            Expr::Let(name, type_, int_expr) => match int_expr {
                 None => {
-                    let variable = self
-                        .variable_builder
-                        .define_var(&mut self.builder, types::F64);
+                    let variable = self.variable_builder.define_var(
+                        &mut self.builder,
+                        Generator::get_type_from_str(&type_).unwrap(),
+                    );
                     self.values.insert(name.clone(), variable);
                     ParseExpr::empty()
                 }
@@ -186,7 +187,7 @@ impl<'a> FunctionGenerator<'a> {
                     let variable = self.variable_builder.create_var(
                         &mut self.builder,
                         parse_expr.value.expect("value"),
-                        types::F64,
+                        Generator::get_type_from_str(&type_).unwrap(),
                     );
                     self.values.insert(name.clone(), variable);
                     parse_expr
@@ -252,8 +253,12 @@ impl Generator {
 
     fn get_type_from_str(str: &str) -> Option<Type> {
         match str {
-            "f64" => Some(types::F64),
+            "i8" => Some(types::I8),
+            "i16" => Some(types::I16),
+            "i32" => Some(types::I32),
             "i64" => Some(types::I64),
+            "f32" => Some(types::F32),
+            "f64" => Some(types::F64),
             "void" => None,
             _ => None, // TODO: Trigger error
         }

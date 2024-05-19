@@ -69,14 +69,16 @@ impl<R: Read> Parser<R> {
     fn let_(&mut self) -> Result<Expr> {
         self.eat(Token::Let)?;
         let name = self.identifier()?;
+        self.eat(Token::Colon)?;
+        let type_ = self.identifier()?;
         let peek = self.lexer.peek(0)?;
         match peek {
             Token::Equal => {
                 self.eat(Token::Equal)?;
                 let expr = self.expr()?;
-                Ok(Expr::Let(name, Some(Box::new(expr))))
+                Ok(Expr::Let(name, type_, Some(Box::new(expr))))
             }
-            Token::SemiColon => Ok(Expr::Let(name, None)),
+            Token::SemiColon => Ok(Expr::Let(name, type_, None)),
             _ => Err(Error::Unexpected("Expected ';' or '='")),
         }
     }

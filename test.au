@@ -3,15 +3,18 @@
 extern sin(rad: f64) f64;
 extern cos(rad: f64) f64;
 extern putf(f: f64);
+extern printf(c: i64);
 
-fn test_func(x: f64, y: f64, k: i64) f64 { 
-    let e;
-    let z = x + y;
+fn test_func(x: f64, y: f64) f64 { 
+    let e: f64;
+    let z: f64 = x + y;
     e = sin(x) + cos(y);
     return e + sin(z);
 }
 
-fn main() i64 {
-    putf(test_func(1.0, 2.0, 5));
+fn main(argc: i64, argv: i64) i64 {
+    let result: f64 = test_func(1.0, 2.0);
+    putf(result);
+    printf(argv);
     return 0;
 }
