@@ -1,13 +1,17 @@
+# Not Rust lul
+
 extern sin(x) f64;
 extern cos(x) f64;
 extern putfloatd(x);
 
 fn test_func(x, y) f64 { 
-    sin(x) + cos(y);
-    return sin(x);
+    let e;
+    let z = x + y;
+    e = sin(x) + cos(y);
+    return e + sin(z);
 }
 
 fn main() {
-    putfloatd(5);
+    putfloatd(test_func(1.0, 2.0));
     return;
 }

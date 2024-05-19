@@ -39,26 +39,53 @@ impl<R: Read> Parser<R> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
         loop {
-            let peek = self.lexer.peek()?;
-            if *peek == Token::Return {
-                self.eat(Token::Return)?;
-                let peek = self.lexer.peek()?;
-                if *peek == Token::Semicolon {
-                    exprs.push(Expr::Return(None));
-                } else {
-                    exprs.push(Expr::Return(Some(Box::new(self.expr()?))));
+            let peek = (*self.lexer.peek(0)?).clone();
+            match peek {
+                Token::Return => {
+                    self.eat(Token::Return)?;
+                    let peek = self.lexer.peek(0)?;
+                    if *peek == Token::Semicolon {
+                        exprs.push(Expr::Return(None))
+                    } else {
+                        exprs.push(Expr::Return(Some(Box::new(self.expr()?))))
+                    }
                 }
-            } else {
-                exprs.push(self.expr()?);
+                Token::Let => exprs.push(self.let_()?),
+                Token::Identifier(_) if *self.lexer.peek(1)? == Token::Equal => {
+                    exprs.push(self.assign()?)
+                }
+                _ => exprs.push(self.expr()?),
             }
             self.eat(Token::Semicolon)?;
-            let peek = self.lexer.peek()?;
+            let peek = self.lexer.peek(0)?;
             if *peek == Token::CloseBracket {
                 self.eat(Token::CloseBracket)?;
                 break;
             }
         }
         Ok(Expr::Block(exprs))
+    }
+
+    fn let_(&mut self) -> Result<Expr> {
+        self.eat(Token::Let)?;
+        let name = self.identifier()?;
+        let peek = self.lexer.peek(0)?;
+        match peek {
+            Token::Equal => {
+                self.eat(Token::Equal)?;
+                let expr = self.expr()?;
+                Ok(Expr::Let(name, Some(Box::new(expr))))
+            }
+            Token::Semicolon => Ok(Expr::Let(name, None)),
+            _ => Err(Error::Unexpected("Expected ';' or '='")),
+        }
+    }
+
+    fn assign(&mut self) -> Result<Expr> {
+        let name = self.identifier()?;
+        self.eat(Token::Equal)?;
+        let expr = self.expr()?;
+        Ok(Expr::Assign(name, Box::new(expr)))
     }
 
     fn eat(&mut self, token: Token) -> Result<()> {
@@ -72,7 +99,7 @@ impl<R: Read> Parser<R> {
     fn prototype(&mut self) -> Result<Prototype> {
         let function_name = self.identifier()?;
         let parameters = self.parameters()?;
-        let return_type = match self.lexer.peek()? {
+        let return_type = match self.lexer.peek(0)? {
             Token::Identifier(_) => self.identifier()?,
             _ => "void".to_string(),
         };
@@ -101,7 +128,7 @@ impl<R: Read> Parser<R> {
         let mut params = vec![];
         let mut accept_more = true;
         loop {
-            match self.lexer.peek()? {
+            match self.lexer.peek(0)? {
                 Token::Identifier(_) => {
                     if !accept_more {
                         return Err(Error::Unexpected("operator, expected ','"));
@@ -133,7 +160,7 @@ impl<R: Read> Parser<R> {
     }
 
     fn primary(&mut self) -> Result<Expr> {
-        match *self.lexer.peek()? {
+        match *self.lexer.peek(0)? {
             Token::Number(number) => {
                 self.lexer.next_token()?;
                 Ok(Expr::Number(number))
@@ -151,7 +178,7 @@ impl<R: Read> Parser<R> {
 
     fn ident_expr(&mut self) -> Result<Expr> {
         let name = self.identifier()?;
-        let ast = match self.lexer.peek()? {
+        let ast = match self.lexer.peek(0)? {
             Token::OpenParen => {
                 self.eat(Token::OpenParen)?;
                 let args = self.args()?;
@@ -164,11 +191,11 @@ impl<R: Read> Parser<R> {
     }
 
     fn args(&mut self) -> Result<Vec<Expr>> {
-        if *self.lexer.peek()? == Token::CloseParen {
+        if *self.lexer.peek(0)? == Token::CloseParen {
             return Ok(vec![]);
         }
         let mut args = vec![self.expr()?];
-        while *self.lexer.peek()? == Token::Comma {
+        while *self.lexer.peek(0)? == Token::Comma {
             self.eat(Token::Comma)?;
             args.push(self.expr()?);
         }
@@ -209,7 +236,7 @@ impl<R: Read> Parser<R> {
     }
 
     fn binary_op(&mut self) -> Result<Option<BinaryOp>> {
-        let op = match self.lexer.peek()? {
+        let op = match self.lexer.peek(0)? {
             Token::LessThan => BinaryOp::LessThan,
             Token::Minus => BinaryOp::Minus,
             Token::Plus => BinaryOp::Plus,

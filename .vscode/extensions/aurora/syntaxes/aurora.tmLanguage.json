@@ -28,7 +28,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.aurora",
-				"match": "\\b(extern|fn|return)\\b"
+				"match": "\\b(extern|fn|return|let)\\b"
 			}]
 		},
 		"number": {

@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     let mut parser = Parser::new(lexer);
     let mut generator = Generator::new();
     loop {
-        let token = match parser.lexer.peek() {
+        let token = match parser.lexer.peek(0) {
             Ok(ref token) => *token,
             Err(error) => {
                 eprintln!("Error: {:?}", error);
@@ -57,15 +57,6 @@ fn main() -> Result<()> {
                 }
             }
             _ => return Err(Error::Unexpected("Unexpected top level token")),
-            // match parser.toplevel().and_then(|func| generator.function(func)) {
-            //     Ok(function) => {
-            //         function();
-            //     }
-            //     Err(error) => {
-            //         parser.lexer.next_token()?;
-            //         eprintln!("Error: {:?}", error);
-            //     }
-            // }
         }
     }
     match generator.get_function_exe::<fn() -> (), ()>("main".to_string()) {

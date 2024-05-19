@@ -27,6 +27,13 @@ impl VariableBuilder {
         Self { index: 0 }
     }
 
+    fn define_var(&mut self, builder: &mut FunctionBuilder) -> Variable {
+        let variable = Variable::new(self.index);
+        builder.declare_var(variable, types::F64);
+        self.index += 1;
+        variable
+    }
+
     fn create_var(&mut self, builder: &mut FunctionBuilder, value: Value) -> Variable {
         let variable = Variable::new(self.index);
         builder.declare_var(variable, types::F64);
@@ -47,7 +54,15 @@ pub struct FunctionGenerator<'a> {
     builder: FunctionBuilder<'a>,
     functions: &'a HashMap<String, CompiledFunction>,
     module: &'a mut Module<SimpleJITBackend>,
+    variable_builder: &'a mut VariableBuilder,
     values: HashMap<String, Variable>,
+}
+
+pub struct Generator {
+    builder_context: FunctionBuilderContext,
+    functions: HashMap<String, CompiledFunction>,
+    module: Module<SimpleJITBackend>,
+    variable_builder: VariableBuilder,
 }
 
 struct ParseExpr {
@@ -91,7 +106,10 @@ impl<'a> FunctionGenerator<'a> {
             Expr::Number(num) => ParseExpr::new(Some(self.builder.ins().f64const(num))),
             Expr::Variable(name) => match self.values.get(&name) {
                 Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
-                None => return Err(Error::Undefined("variable")),
+                None => {
+                    dbg!(name);
+                    return Err(Error::Undefined("variable"));
+                }
             },
             Expr::Binary(op, left, right) => {
                 let left = self.expr(*left)?.value.unwrap(); // TODO: unwrap these properly
@@ -123,7 +141,6 @@ impl<'a> FunctionGenerator<'a> {
                         .collect();
 
                     let call = self.builder.ins().call(local_func, &arguments);
-                    println!("here");
                     if func.return_count > 0 {
                         // TODO: Current solution is not the best
                         return Ok(ParseExpr::new(Some(self.builder.inst_results(call)[0])));
@@ -155,16 +172,35 @@ impl<'a> FunctionGenerator<'a> {
                     }
                 }
             }
+            Expr::Let(name, int_expr) => match int_expr {
+                None => {
+                    let variable = self.variable_builder.define_var(&mut self.builder);
+                    self.values.insert(name.clone(), variable);
+                    ParseExpr::empty()
+                }
+                Some(value) => {
+                    let parse_expr = self.expr(*value)?;
+                    let variable = self
+                        .variable_builder
+                        .create_var(&mut self.builder, parse_expr.value.expect("value"));
+                    self.values.insert(name.clone(), variable);
+                    parse_expr
+                }
+            },
+            Expr::Assign(name, value) => {
+                let val = self.expr(*value)?;
+                let var = self.values.get(&name);
+                match var {
+                    Some(variable) => {
+                        self.builder.def_var(*variable, val.value.unwrap());
+                        val
+                    }
+                    None => return Err(Error::Undefined("variable")),
+                }
+            }
         };
         Ok(value)
     }
-}
-
-pub struct Generator {
-    builder_context: FunctionBuilderContext,
-    functions: HashMap<String, CompiledFunction>,
-    module: Module<SimpleJITBackend>,
-    variable_builder: VariableBuilder,
 }
 
 impl Generator {
@@ -282,11 +318,13 @@ impl Generator {
             functions: &self.functions,
             module: &mut self.module,
             values,
+            variable_builder: &mut self.variable_builder,
         };
 
         match generator.expr(function.body) {
             Ok(value) => value,
             Err(error) => {
+                dbg!(&error);
                 generator.builder.finalize();
                 self.functions.remove(&function_name);
                 return Err(error);

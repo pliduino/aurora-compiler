@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     fmt::Display,
     io::{Bytes, Read},
     iter::Peekable,
@@ -9,22 +10,26 @@ use crate::error::Result;
 
 pub struct Lexer<R: Read> {
     bytes: Peekable<Bytes<R>>,
-    lookahead: Option<Token>,
+    lookahead: VecDeque<Token>,
 }
 
 impl<R: Read> Lexer<R> {
     pub fn new(reader: R) -> Self {
         Self {
             bytes: reader.bytes().peekable(),
-            lookahead: None,
+            lookahead: VecDeque::new(),
         }
     }
 
     pub fn next_token(&mut self) -> Result<Token> {
-        if let Some(lookahead) = self.lookahead.take() {
+        if let Some(lookahead) = self.lookahead.pop_front() {
             return Ok(lookahead);
         }
 
+        self.next_token_no_check()
+    }
+
+    fn next_token_no_check(&mut self) -> Result<Token> {
         if let Some(&Ok(byte)) = self.bytes.peek() {
             return match byte {
                 // Skips empty spaces
@@ -48,6 +53,7 @@ impl<R: Read> Lexer<R> {
                         b')' => Token::CloseParen,
                         b'{' => Token::OpenBracket,
                         b'}' => Token::CloseBracket,
+                        b'=' => Token::Equal,
                         _ => return Err(UnknownChar(byte as char)),
                     };
 
@@ -58,13 +64,14 @@ impl<R: Read> Lexer<R> {
         Ok(Token::Eof)
     }
 
-    pub fn peek(&mut self) -> Result<&Token> {
-        match self.lookahead {
-            Some(ref token) => Ok(token),
-            None => {
-                self.lookahead = Some(self.next_token()?);
-                self.peek()
+    pub fn peek(&mut self, dist: usize) -> Result<&Token> {
+        loop {
+            if self.lookahead.len() >= dist + 1 {
+                return Ok(self.lookahead.get(dist).unwrap());
             }
+
+            let token = self.next_token_no_check()?;
+            self.lookahead.push_back(token);
         }
     }
 
@@ -85,6 +92,7 @@ impl<R: Read> Lexer<R> {
             "fn" => Token::Def,
             "extern" => Token::Extern,
             "return" => Token::Return,
+            "let" => Token::Let,
             _ => Token::Identifier(identifier),
         };
 
@@ -145,13 +153,14 @@ impl<R: Read> Lexer<R> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     Eof,
 
     // Commands
     Def,
     Extern,
+    Let,
 
     // Primary
     Identifier(String),
@@ -162,6 +171,8 @@ pub enum Token {
     Minus,
     Plus,
     Star,
+
+    Equal,
 
     // Other
     Semicolon,
@@ -179,7 +190,7 @@ impl Display for Token {
             Token::Eof => todo!(),
             Token::Def => write!(f, "fn"),
             Token::Extern => write!(f, "extern"),
-            Token::Identifier(_) => todo!(),
+            Token::Identifier(id) => write!(f, "identifier: {}", id),
             Token::Number(_) => todo!(),
             Token::LessThan => write!(f, "<"),
             Token::Minus => write!(f, "-"),
@@ -192,6 +203,8 @@ impl Display for Token {
             Token::OpenBracket => write!(f, "{{"),
             Token::CloseBracket => write!(f, "}}"),
             Token::Return => write!(f, "return"),
+            Token::Equal => write!(f, "="),
+            Token::Let => write!(f, "let"),
         }
     }
 }

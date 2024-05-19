@@ -12,6 +12,8 @@ pub enum Expr {
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
     Number(f64),
+    Let(String, Option<Box<Expr>>),
+    Assign(String, Box<Expr>),
     Variable(String),
     Block(Vec<Expr>),
     Return(Option<Box<Expr>>),
