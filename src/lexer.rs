@@ -47,13 +47,14 @@ impl<R: Read> Lexer<R> {
                         b'+' => Token::Plus,
                         b'-' => Token::Minus,
                         b'*' => Token::Star,
-                        b';' => Token::Semicolon,
+                        b';' => Token::SemiColon,
                         b',' => Token::Comma,
                         b'(' => Token::OpenParen,
                         b')' => Token::CloseParen,
                         b'{' => Token::OpenBracket,
                         b'}' => Token::CloseBracket,
                         b'=' => Token::Equal,
+                        b':' => Token::Colon,
                         _ => return Err(UnknownChar(byte as char)),
                     };
 
@@ -176,7 +177,8 @@ pub enum Token {
     Equal,
 
     // Other
-    Semicolon,
+    Colon,
+    SemiColon,
     OpenParen,
     CloseParen,
     Comma,
@@ -198,7 +200,7 @@ impl Display for Token {
             Token::Minus => write!(f, "-"),
             Token::Plus => write!(f, "+"),
             Token::Star => write!(f, "*"),
-            Token::Semicolon => write!(f, ";"),
+            Token::SemiColon => write!(f, ";"),
             Token::OpenParen => write!(f, "("),
             Token::CloseParen => write!(f, ")"),
             Token::Comma => write!(f, ","),
@@ -207,6 +209,7 @@ impl Display for Token {
             Token::Return => write!(f, "return"),
             Token::Equal => write!(f, "="),
             Token::Let => write!(f, "let"),
+            Token::Colon => write!(f, ":"),
         }
     }
 }

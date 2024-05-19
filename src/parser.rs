@@ -1,7 +1,7 @@
 use std::{collections::HashMap, io::Read};
 
 use crate::{
-    ast::{BinaryOp, Expr, Function, Prototype},
+    ast::{BinaryOp, Expr, Function, Parameter, Prototype},
     error::{Error, Result},
     lexer::{Lexer, Token},
 };
@@ -44,7 +44,7 @@ impl<R: Read> Parser<R> {
                 Token::Return => {
                     self.eat(Token::Return)?;
                     let peek = self.lexer.peek(0)?;
-                    if *peek == Token::Semicolon {
+                    if *peek == Token::SemiColon {
                         exprs.push(Expr::Return(None))
                     } else {
                         exprs.push(Expr::Return(Some(Box::new(self.expr()?))))
@@ -56,7 +56,7 @@ impl<R: Read> Parser<R> {
                 }
                 _ => exprs.push(self.expr()?),
             }
-            self.eat(Token::Semicolon)?;
+            self.eat(Token::SemiColon)?;
             let peek = self.lexer.peek(0)?;
             if *peek == Token::CloseBracket {
                 self.eat(Token::CloseBracket)?;
@@ -76,7 +76,7 @@ impl<R: Read> Parser<R> {
                 let expr = self.expr()?;
                 Ok(Expr::Let(name, Some(Box::new(expr))))
             }
-            Token::Semicolon => Ok(Expr::Let(name, None)),
+            Token::SemiColon => Ok(Expr::Let(name, None)),
             _ => Err(Error::Unexpected("Expected ';' or '='")),
         }
     }
@@ -123,7 +123,7 @@ impl<R: Read> Parser<R> {
         }
     }
 
-    fn parameters(&mut self) -> Result<Vec<String>> {
+    fn parameters(&mut self) -> Result<Vec<Parameter>> {
         self.eat(Token::OpenParen)?;
         let mut params = vec![];
         let mut accept_more = true;
@@ -135,11 +135,16 @@ impl<R: Read> Parser<R> {
                     }
                     accept_more = false;
 
-                    let ident = match self.lexer.next_token()? {
-                        Token::Identifier(ident) => ident,
+                    let name = match self.lexer.next_token()? {
+                        Token::Identifier(id) => id,
                         _ => unreachable!(),
                     };
-                    params.push(ident);
+                    self.eat(Token::Colon)?;
+                    let type_ = match self.lexer.next_token()? {
+                        Token::Identifier(t) => t,
+                        _ => return Err(Error::Unexpected("type token")),
+                    };
+                    params.push(Parameter { name, type_ });
                 }
                 Token::CloseParen => {
                     self.eat(Token::CloseParen)?;

@@ -28,7 +28,7 @@ fn main() -> Result<()> {
         };
         match token {
             Token::Eof => break,
-            Token::Semicolon => {
+            Token::SemiColon => {
                 parser.lexer.next_token()?;
                 continue;
             }

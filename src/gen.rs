@@ -27,16 +27,16 @@ impl VariableBuilder {
         Self { index: 0 }
     }
 
-    fn define_var(&mut self, builder: &mut FunctionBuilder) -> Variable {
+    fn define_var(&mut self, builder: &mut FunctionBuilder, type_: Type) -> Variable {
         let variable = Variable::new(self.index);
-        builder.declare_var(variable, types::F64);
+        builder.declare_var(variable, type_);
         self.index += 1;
         variable
     }
 
-    fn create_var(&mut self, builder: &mut FunctionBuilder, value: Value) -> Variable {
+    fn create_var(&mut self, builder: &mut FunctionBuilder, value: Value, type_: Type) -> Variable {
         let variable = Variable::new(self.index);
-        builder.declare_var(variable, types::F64);
+        builder.declare_var(variable, type_);
         self.index += 1;
         builder.def_var(variable, value);
         variable
@@ -175,15 +175,19 @@ impl<'a> FunctionGenerator<'a> {
             }
             Expr::Let(name, int_expr) => match int_expr {
                 None => {
-                    let variable = self.variable_builder.define_var(&mut self.builder);
+                    let variable = self
+                        .variable_builder
+                        .define_var(&mut self.builder, types::F64);
                     self.values.insert(name.clone(), variable);
                     ParseExpr::empty()
                 }
                 Some(value) => {
                     let parse_expr = self.expr(*value)?;
-                    let variable = self
-                        .variable_builder
-                        .create_var(&mut self.builder, parse_expr.value.expect("value"));
+                    let variable = self.variable_builder.create_var(
+                        &mut self.builder,
+                        parse_expr.value.expect("value"),
+                        types::F64,
+                    );
                     self.values.insert(name.clone(), variable);
                     parse_expr
                 }
@@ -235,8 +239,9 @@ impl Generator {
     // }
 
     fn signature_append_from_prototype(&self, prototype: &Prototype, signature: &mut Signature) {
-        for _parameter in &prototype.parameters {
-            signature.params.push(AbiParam::new(types::F64));
+        for parameter in &prototype.parameters {
+            let type_ = Self::get_type_from_str(&parameter.type_).expect("Parameter can't be void");
+            signature.params.push(AbiParam::new(type_));
         }
 
         let return_type = Generator::get_type_from_str(&prototype.return_type);
@@ -311,10 +316,14 @@ impl Generator {
 
         // Add parameters to stack
         let mut values = HashMap::new();
-        for (i, name) in parameters.iter().enumerate() {
+        for (i, parameter) in parameters.iter().enumerate() {
             let val = builder.block_params(entry_block)[i];
-            let variable = self.variable_builder.create_var(&mut builder, val);
-            values.insert(name.clone(), variable);
+            let variable = self.variable_builder.create_var(
+                &mut builder,
+                val,
+                Self::get_type_from_str(&parameter.type_).unwrap(), // Safe to unwrap, it would've panicked while making the prototype otherwise
+            );
+            values.insert(parameter.name.clone(), variable);
         }
 
         if let Some(ref mut function) = self.functions.get_mut(&function_name) {

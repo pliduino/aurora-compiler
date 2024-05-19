@@ -1,10 +1,10 @@
 # Not Rust lul
 
-extern sin(x) f64;
-extern cos(x) f64;
-extern putf(x);
+extern sin(rad: f64) f64;
+extern cos(rad: f64) f64;
+extern putf(f: f64);
 
-fn test_func(x, y) f64 { 
+fn test_func(x: f64, y: f64, k: i64) f64 { 
     let e;
     let z = x + y;
     e = sin(x) + cos(y);
@@ -12,6 +12,6 @@ fn test_func(x, y) f64 {
 }
 
 fn main() i64 {
-    putf(test_func(1.0, 2.0));
+    putf(test_func(1.0, 2.0, 5));
     return 0;
 }

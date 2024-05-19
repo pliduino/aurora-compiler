@@ -27,8 +27,14 @@ pub struct Function {
 }
 
 #[derive(Debug)]
+pub struct Parameter {
+    pub name: String,
+    pub type_: String,
+}
+
+#[derive(Debug)]
 pub struct Prototype {
     pub function_name: String,
-    pub parameters: Vec<String>,
+    pub parameters: Vec<Parameter>,
     pub return_type: String,
 }
