@@ -15,7 +15,9 @@ mod parser;
 mod typing;
 
 fn main() -> Result<()> {
-    let filename = "test.au";
+    let filename = "example/test.au";
+    let exe_filename = "test.exe";
+
     let file = File::open(filename)?;
     let lexer = Lexer::new(file);
     let mut parser = Parser::new(lexer);
@@ -82,21 +84,25 @@ fn main() -> Result<()> {
             _ => return Err(Error::Unexpected("Unexpected top level token")),
         }
     }
-    // match generator.get_function_exe::<()>("main".to_string()) {
-    //     Some(entrypoint) => {
-    //         entrypoint();
-    //         return Ok(());
-    //     }
-    //     None => {
-    //         return Err(Error::Unexpected(
-    //             "No entrypoint defined, please define a \"main\" function",
-    //         ))
-    //     }
-    // }
 
     let mut object = generator.module.finish().emit().unwrap();
-    let mut output_file = File::create("./test.o")?;
+
+    let mut output_file = File::create("./build/test.o")?;
     output_file.write_all(&mut object)?;
+    drop(output_file);
+
+    _ = std::process::Command::new("gcc")
+        .args(&[
+            "./example/lib.c",
+            "./build/test.o",
+            "-lm",
+            "-o",
+            &format!("./build/{}", exe_filename),
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status();
+
     Ok(())
 }
 
