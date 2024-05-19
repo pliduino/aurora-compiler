@@ -12,9 +12,11 @@ mod error;
 mod gen;
 mod lexer;
 mod parser;
+mod typing;
 
 fn main() -> Result<()> {
-    let file = File::open("test.au")?;
+    let filename = "test.au";
+    let file = File::open(filename)?;
     let lexer = Lexer::new(file);
     let mut parser = Parser::new(lexer);
     let mut generator = Generator::new();
@@ -22,7 +24,13 @@ fn main() -> Result<()> {
         let token = match parser.lexer.peek(0) {
             Ok(ref token) => *token,
             Err(error) => {
-                eprintln!("Error: {:?}", error);
+                eprintln!(
+                    "{}:{}:{} Error: {:?}",
+                    filename,
+                    parser.lexer.get_line(),
+                    parser.lexer.get_pos(),
+                    error
+                );
                 continue;
             }
         };
@@ -40,7 +48,13 @@ fn main() -> Result<()> {
                     Ok(_definition) => (),
                     Err(error) => {
                         parser.lexer.next_token()?;
-                        eprintln!("Error: {:?}", error);
+                        eprintln!(
+                            "{}:{}:{} Error: {:?}",
+                            filename,
+                            parser.lexer.get_line(),
+                            parser.lexer.get_pos(),
+                            error
+                        );
                     }
                 }
             }
@@ -52,7 +66,13 @@ fn main() -> Result<()> {
                     Ok(prototype) => println!("{}", prototype),
                     Err(error) => {
                         parser.lexer.next_token()?;
-                        eprintln!("Error: {:?}", error);
+                        eprintln!(
+                            "{}:{}:{} Error: {:?}",
+                            filename,
+                            parser.lexer.get_line(),
+                            parser.lexer.get_pos(),
+                            error
+                        );
                     }
                 }
             }

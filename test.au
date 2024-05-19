@@ -9,7 +9,7 @@ fn test_func(x: f64, y: f64) f64 {
     let e: f64;
     let z: f64 = x + y;
     e = sin(x) + cos(y);
-    return e + sin(z);
+    return e + sin(x);
 }
 
 fn main(argc: i64, argv: i64) i64 {

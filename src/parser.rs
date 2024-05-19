@@ -1,12 +1,14 @@
 use std::{collections::HashMap, io::Read};
 
 use crate::{
-    ast::{BinaryOp, Expr, Function, Parameter, Prototype},
+    ast::{BinaryOp, Expr, ExprType, Function, Parameter, Prototype},
     error::{Error, Result},
     lexer::{Lexer, Token},
+    typing,
 };
 
 pub struct Parser<R: Read> {
+    type_map: HashMap<String, &'static str>,
     bin_precedence: HashMap<BinaryOp, i32>,
     pub lexer: Lexer<R>,
 }
@@ -19,6 +21,7 @@ impl<R: Read> Parser<R> {
         bin_precedence.insert(BinaryOp::Minus, 20);
         bin_precedence.insert(BinaryOp::Times, 40);
         return Self {
+            type_map: HashMap::new(),
             bin_precedence,
             lexer,
         };
@@ -28,14 +31,20 @@ impl<R: Read> Parser<R> {
         self.eat(Token::Def)?;
         let prototype = self.prototype()?;
 
-        let body;
+        for par in &prototype.parameters {
+            self.type_map.insert(par.name.clone(), par.type_);
+        }
 
-        body = self.block()?;
+        let body = self.block(prototype.return_type)?;
+
+        for par in &prototype.parameters {
+            self.type_map.remove(&par.name);
+        }
 
         Ok(Function { prototype, body })
     }
 
-    fn block(&mut self) -> Result<Expr> {
+    fn block(&mut self, type_: &'static str) -> Result<Expr> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
         loop {
@@ -45,9 +54,16 @@ impl<R: Read> Parser<R> {
                     self.eat(Token::Return)?;
                     let peek = self.lexer.peek(0)?;
                     if *peek == Token::SemiColon {
-                        exprs.push(Expr::Return(None))
+                        exprs.push(Expr {
+                            expr_type: ExprType::Return(None),
+                            type_: typing::VOID,
+                        })
                     } else {
-                        exprs.push(Expr::Return(Some(Box::new(self.expr()?))))
+                        let expr = Box::new(self.expr()?);
+                        exprs.push(Expr {
+                            type_: expr.type_,
+                            expr_type: ExprType::Return(Some(expr)),
+                        })
                     }
                 }
                 Token::Let => exprs.push(self.let_()?),
@@ -63,22 +79,52 @@ impl<R: Read> Parser<R> {
                 break;
             }
         }
-        Ok(Expr::Block(exprs))
+        Ok(Expr {
+            expr_type: ExprType::Block(exprs),
+            type_,
+        })
     }
 
     fn let_(&mut self) -> Result<Expr> {
         self.eat(Token::Let)?;
         let name = self.identifier()?;
-        self.eat(Token::Colon)?;
-        let type_ = self.identifier()?;
+        let token = self.lexer.peek(0)?;
+        let mut type_: &str = typing::ANY;
+        if *token == Token::Colon {
+            self.eat(Token::Colon)?;
+            type_ = typing::get_const_str_from_string(self.identifier()?);
+        }
+
         let peek = self.lexer.peek(0)?;
         match peek {
             Token::Equal => {
                 self.eat(Token::Equal)?;
                 let expr = self.expr()?;
-                Ok(Expr::Let(name, type_, Some(Box::new(expr))))
+                if type_.is_empty() || expr.type_ == type_ {
+                    if let Some(_) = self.type_map.insert(name.clone(), expr.type_) {
+                        return Err(Error::VariableRedef);
+                    }
+                    Ok(Expr {
+                        type_: expr.type_,
+                        expr_type: ExprType::Let(name, Some(Box::new(expr))),
+                    })
+                } else {
+                    dbg!(type_, &expr);
+                    Err(Error::MismatchedTypes(type_, expr.type_))
+                }
             }
-            Token::SemiColon => Ok(Expr::Let(name, type_, None)),
+            Token::SemiColon => {
+                if let Some(_) = self.type_map.insert(name.clone(), type_) {
+                    return Err(Error::VariableRedef);
+                }
+                if type_ == typing::ANY {
+                    return Err(Error::Undefined("type".to_string())); //TODO: Remove this and try to infer it later via type_map
+                }
+                Ok(Expr {
+                    expr_type: ExprType::Let(name, None),
+                    type_,
+                })
+            }
             _ => Err(Error::Unexpected("Expected ';' or '='")),
         }
     }
@@ -87,7 +133,10 @@ impl<R: Read> Parser<R> {
         let name = self.identifier()?;
         self.eat(Token::Equal)?;
         let expr = self.expr()?;
-        Ok(Expr::Assign(name, Box::new(expr)))
+        Ok(Expr {
+            type_: expr.type_,
+            expr_type: ExprType::Assign(name, Box::new(expr)),
+        })
     }
 
     fn eat(&mut self, token: Token) -> Result<()> {
@@ -102,9 +151,13 @@ impl<R: Read> Parser<R> {
         let function_name = self.identifier()?;
         let parameters = self.parameters()?;
         let return_type = match self.lexer.peek(0)? {
-            Token::Identifier(_) => self.identifier()?,
-            _ => "void".to_string(),
+            Token::Identifier(_) => typing::get_const_str_from_string(self.identifier()?),
+            _ => typing::VOID,
         };
+
+        if let Some(_) = self.type_map.insert(function_name.clone(), return_type) {
+            return Err(Error::FunctionRedef);
+        }
 
         Ok(Prototype {
             function_name,
@@ -142,10 +195,11 @@ impl<R: Read> Parser<R> {
                         _ => unreachable!(),
                     };
                     self.eat(Token::Colon)?;
-                    let type_ = match self.lexer.next_token()? {
-                        Token::Identifier(t) => t,
-                        _ => return Err(Error::Unexpected("type token")),
-                    };
+                    let type_ =
+                        typing::get_const_str_from_string(match self.lexer.next_token()? {
+                            Token::Identifier(t) => t,
+                            _ => return Err(Error::Unexpected("type token")),
+                        });
                     params.push(Parameter { name, type_ });
                 }
                 Token::CloseParen => {
@@ -170,11 +224,17 @@ impl<R: Read> Parser<R> {
         match *self.lexer.peek(0)? {
             Token::Float(f) => {
                 self.lexer.next_token()?;
-                Ok(Expr::Float(f))
+                Ok(Expr {
+                    expr_type: ExprType::Float(f),
+                    type_: typing::F64,
+                })
             }
             Token::Integer(i) => {
                 self.lexer.next_token()?;
-                Ok(Expr::Integer(i))
+                Ok(Expr {
+                    expr_type: ExprType::Integer(i),
+                    type_: typing::I64,
+                })
             }
             Token::OpenParen => {
                 self.eat(Token::OpenParen)?;
@@ -189,14 +249,24 @@ impl<R: Read> Parser<R> {
 
     fn ident_expr(&mut self) -> Result<Expr> {
         let name = self.identifier()?;
+        let type_ = match self.type_map.get(&name) {
+            Some(t) => *t,
+            None => return Err(Error::Undefined(format!("identifier {}", name))),
+        };
         let ast = match self.lexer.peek(0)? {
             Token::OpenParen => {
                 self.eat(Token::OpenParen)?;
                 let args = self.args()?;
                 self.eat(Token::CloseParen)?;
-                Expr::Call(name, args)
+                Expr {
+                    expr_type: ExprType::Call(name, args),
+                    type_,
+                }
             }
-            _ => Expr::Variable(name),
+            _ => Expr {
+                expr_type: ExprType::Variable(name),
+                type_,
+            },
         };
         Ok(ast)
     }
@@ -238,7 +308,10 @@ impl<R: Read> Parser<R> {
                         }
                         None => right,
                     };
-                    let left = Expr::Binary(op, Box::new(left), Box::new(right));
+                    let left = Expr {
+                        type_: left.type_,
+                        expr_type: ExprType::Binary(op, Box::new(left), Box::new(right)),
+                    };
                     self.binary_right(expr_precedence, left)
                 }
             }
@@ -260,7 +333,7 @@ impl<R: Read> Parser<R> {
     fn precedence(&mut self, op: BinaryOp) -> Result<i32> {
         match self.bin_precedence.get(&op) {
             Some(&precedence) => Ok(precedence),
-            None => Err(Error::Undefined("operator")),
+            None => Err(Error::Undefined("operator".to_string())),
         }
     }
 }

@@ -18,12 +18,14 @@ pub enum Error {
     ParseFloat(ParseFloatError),
     ParseInt(ParseIntError),
     UnknownChar(char),
-    Undefined(&'static str),
+    Undefined(String),
     Unexpected(&'static str),
     UnexpectedToken(Token, Token),
     WrongArgumentCount,
+    VariableRedef,
     FunctionRedef,
     FunctionRedefWithDifferentParams,
+    MismatchedTypes(&'static str, &'static str),
 }
 
 impl Debug for Error {
@@ -37,6 +39,7 @@ impl Debug for Error {
             Unexpected(msg) => write!(formatter, "unexpected {}", msg),
             WrongArgumentCount => write!(formatter, "wrong argument count"),
             FunctionRedef => write!(formatter, "redefinition of function"),
+            VariableRedef => write!(formatter, "redefinition of a variable"),
             FunctionRedefWithDifferentParams => write!(
                 formatter,
                 "redefinition of function with different number of parameters"
@@ -45,7 +48,12 @@ impl Debug for Error {
             CraneliftCodegen(ref error) => error.fmt(formatter),
             UnexpectedToken(expected, got) => write!(
                 formatter,
-                "token, was expecting '{}' but got '{}'",
+                "unexpected token, was expecting '{}' but got '{}'",
+                expected, got,
+            ),
+            MismatchedTypes(expected, got) => write!(
+                formatter,
+                "mismatched type, was expecting '{}' but got '{}'",
                 expected, got,
             ),
         }

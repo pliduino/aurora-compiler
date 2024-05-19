@@ -14,8 +14,9 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use target_lexicon::triple;
 
 use crate::{
-    ast::{BinaryOp, Expr, Function, Prototype},
+    ast::{BinaryOp, Expr, ExprType, Function, Prototype},
     error::{Error, Result},
+    typing::get_type_from_str,
 };
 
 struct VariableBuilder {
@@ -102,17 +103,32 @@ impl ParseExpr {
 
 impl<'a> FunctionGenerator<'a> {
     fn expr(&mut self, expr: Expr) -> Result<ParseExpr> {
-        let value = match expr {
-            Expr::Float(num) => ParseExpr::new(Some(self.builder.ins().f64const(num))),
-            Expr::Integer(num) => ParseExpr::new(Some(self.builder.ins().iconst(types::I64, num))),
-            Expr::Variable(name) => match self.values.get(&name) {
+        let value = match expr.expr_type {
+            ExprType::Float(num) => match get_type_from_str(expr.type_) {
+                Some(type_) => match type_ {
+                    types::F32 => ParseExpr::new(Some(self.builder.ins().f32const(num as f32))),
+                    types::F64 => ParseExpr::new(Some(self.builder.ins().f64const(num))),
+                    _ => unimplemented!(),
+                },
+                None => ParseExpr::empty(),
+            },
+            ExprType::Integer(num) => match get_type_from_str(expr.type_) {
+                Some(type_) => match type_ {
+                    types::I8 => ParseExpr::new(Some(self.builder.ins().iconst(types::I8, num))),
+                    types::I16 => ParseExpr::new(Some(self.builder.ins().iconst(types::I16, num))),
+                    types::I32 => ParseExpr::new(Some(self.builder.ins().iconst(types::I32, num))),
+                    types::I64 => ParseExpr::new(Some(self.builder.ins().iconst(types::I64, num))),
+                    _ => unimplemented!(),
+                },
+                None => ParseExpr::empty(),
+            },
+            ExprType::Variable(name) => match self.values.get(&name) {
                 Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
                 None => {
-                    dbg!(name);
-                    return Err(Error::Undefined("variable"));
+                    return Err(Error::Undefined(format!("variable {}", name)));
                 }
             },
-            Expr::Binary(op, left, right) => {
+            ExprType::Binary(op, left, right) => {
                 let left = self.expr(*left)?.value.unwrap(); // TODO: unwrap these properly
                 let right = self.expr(*right)?.value.unwrap();
                 match op {
@@ -126,7 +142,7 @@ impl<'a> FunctionGenerator<'a> {
                     ))),
                 }
             }
-            Expr::Call(name, args) => match self.functions.get(&name) {
+            ExprType::Call(name, args) => match self.functions.get(&name) {
                 Some(func) => {
                     if func.param_count != args.len() {
                         return Err(Error::WrongArgumentCount);
@@ -148,9 +164,9 @@ impl<'a> FunctionGenerator<'a> {
                     }
                     ParseExpr::empty()
                 }
-                None => return Err(Error::Undefined("function")),
+                None => return Err(Error::Undefined(format!("function {}", name))),
             },
-            Expr::Block(exprs) => {
+            ExprType::Block(exprs) => {
                 for expr in exprs {
                     let parse_expr = self.expr(expr)?;
                     if parse_expr.is_return {
@@ -160,7 +176,7 @@ impl<'a> FunctionGenerator<'a> {
                 self.builder.ins().return_(&[]);
                 ParseExpr::empty()
             }
-            Expr::Return(expr) => {
+            ExprType::Return(expr) => {
                 match expr {
                     Some(expr) => {
                         let value = self.expr(*expr)?;
@@ -173,12 +189,11 @@ impl<'a> FunctionGenerator<'a> {
                     }
                 }
             }
-            Expr::Let(name, type_, int_expr) => match int_expr {
+            ExprType::Let(name, int_expr) => match int_expr {
                 None => {
-                    let variable = self.variable_builder.define_var(
-                        &mut self.builder,
-                        Generator::get_type_from_str(&type_).unwrap(),
-                    );
+                    let variable = self
+                        .variable_builder
+                        .define_var(&mut self.builder, get_type_from_str(&expr.type_).unwrap());
                     self.values.insert(name.clone(), variable);
                     ParseExpr::empty()
                 }
@@ -187,13 +202,13 @@ impl<'a> FunctionGenerator<'a> {
                     let variable = self.variable_builder.create_var(
                         &mut self.builder,
                         parse_expr.value.expect("value"),
-                        Generator::get_type_from_str(&type_).unwrap(),
+                        get_type_from_str(&expr.type_).unwrap(),
                     );
                     self.values.insert(name.clone(), variable);
                     parse_expr
                 }
             },
-            Expr::Assign(name, value) => {
+            ExprType::Assign(name, value) => {
                 let val = self.expr(*value)?;
                 let var = self.values.get(&name);
                 match var {
@@ -201,7 +216,7 @@ impl<'a> FunctionGenerator<'a> {
                         self.builder.def_var(*variable, val.value.unwrap());
                         val
                     }
-                    None => return Err(Error::Undefined("variable")),
+                    None => return Err(Error::Undefined(format!("variable {}", name))),
                 }
             }
         };
@@ -241,26 +256,13 @@ impl Generator {
 
     fn signature_append_from_prototype(&self, prototype: &Prototype, signature: &mut Signature) {
         for parameter in &prototype.parameters {
-            let type_ = Self::get_type_from_str(&parameter.type_).expect("Parameter can't be void");
+            let type_ = get_type_from_str(&parameter.type_).expect("Parameter can't be void");
             signature.params.push(AbiParam::new(type_));
         }
 
-        let return_type = Generator::get_type_from_str(&prototype.return_type);
+        let return_type = get_type_from_str(&prototype.return_type);
         if let Some(tp) = return_type {
             signature.returns.push(AbiParam::new(tp));
-        }
-    }
-
-    fn get_type_from_str(str: &str) -> Option<Type> {
-        match str {
-            "i8" => Some(types::I8),
-            "i16" => Some(types::I16),
-            "i32" => Some(types::I32),
-            "i64" => Some(types::I64),
-            "f32" => Some(types::F32),
-            "f64" => Some(types::F64),
-            "void" => None,
-            _ => None, // TODO: Trigger error
         }
     }
 
@@ -326,7 +328,7 @@ impl Generator {
             let variable = self.variable_builder.create_var(
                 &mut builder,
                 val,
-                Self::get_type_from_str(&parameter.type_).unwrap(), // Safe to unwrap, it would've panicked while making the prototype otherwise
+                get_type_from_str(&parameter.type_).unwrap(), // Safe to unwrap, it would've panicked while making the prototype otherwise
             );
             values.insert(parameter.name.clone(), variable);
         }

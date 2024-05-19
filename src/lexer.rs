@@ -11,6 +11,8 @@ use crate::error::Result;
 pub struct Lexer<R: Read> {
     bytes: Peekable<Bytes<R>>,
     lookahead: VecDeque<Token>,
+    line: usize,
+    pos: usize,
 }
 
 impl<R: Read> Lexer<R> {
@@ -18,7 +20,17 @@ impl<R: Read> Lexer<R> {
         Self {
             bytes: reader.bytes().peekable(),
             lookahead: VecDeque::new(),
+            line: 1,
+            pos: 1,
         }
+    }
+
+    pub fn get_line(&self) -> usize {
+        self.line
+    }
+
+    pub fn get_pos(&self) -> usize {
+        self.pos
     }
 
     pub fn next_token(&mut self) -> Result<Token> {
@@ -31,11 +43,18 @@ impl<R: Read> Lexer<R> {
 
     fn next_token_no_check(&mut self) -> Result<Token> {
         if let Some(&Ok(byte)) = self.bytes.peek() {
+            self.pos += 1;
             return match byte {
                 // Skips empty spaces
-                b' ' | b'\n' | b'\r' | b'\t' => {
+                b' ' | b'\r' | b'\t' => {
                     self.bytes.next();
-                    self.next_token()
+                    self.next_token_no_check()
+                }
+                b'\n' => {
+                    self.line += 1;
+                    self.pos = 1;
+                    self.bytes.next();
+                    self.next_token_no_check()
                 }
                 b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.identifier(),
                 b'0'..=b'9' | b'.' => self.number(),
@@ -102,6 +121,7 @@ impl<R: Read> Lexer<R> {
 
     fn peek_char(&mut self) -> Result<Option<char>> {
         if let Some(&Ok(byte)) = self.bytes.peek() {
+            self.pos += 1;
             return Ok(Some(byte as char));
         }
 
