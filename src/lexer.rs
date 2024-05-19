@@ -164,6 +164,7 @@ impl<R: Read> Lexer<R> {
             if let Some(char) = self.peek_char()? {
                 self.bytes.next();
                 if char == '\n' {
+                    self.line += 1;
                     break;
                 }
             } else {

@@ -14,9 +14,9 @@ use cranelift_object::{ObjectBuilder, ObjectModule};
 use target_lexicon::triple;
 
 use crate::{
-    ast::{BinaryOp, Expr, ExprType, Function, Prototype},
+    ast::{BinaryOp, Expr, ExprType, Function, Parameter, Prototype},
     error::{Error, Result},
-    typing::get_type_from_str,
+    typing::{self, get_type_from_str},
 };
 
 struct VariableBuilder {
@@ -102,47 +102,81 @@ impl ParseExpr {
 }
 
 impl<'a> FunctionGenerator<'a> {
-    fn expr(&mut self, expr: Expr) -> Result<ParseExpr> {
-        let value = match expr.expr_type {
+    fn cast(&mut self, value: Value, from: &'static str, to: &'static str) -> Result<Value> {
+        match self.functions.get(&format!("{}->{}", from, to)) {
+            Some(func) => {
+                let local_func = self
+                    .module
+                    .declare_func_in_func(func.id, &mut self.builder.func);
+                let call = self.builder.ins().call(local_func, &vec![value]);
+                // TODO: Current solution is not the best
+                Ok(self.builder.inst_results(call)[0])
+            }
+            None => return Err(Error::Undefined(format!("can't cast {} to {}", from, to))),
+        }
+    }
+
+    fn expr(&mut self, expr: &Expr) -> Result<ParseExpr> {
+        let value = match &expr.expr_type {
             ExprType::Float(num) => match get_type_from_str(expr.type_) {
                 Some(type_) => match type_ {
-                    types::F32 => ParseExpr::new(Some(self.builder.ins().f32const(num as f32))),
-                    types::F64 => ParseExpr::new(Some(self.builder.ins().f64const(num))),
+                    types::F32 => ParseExpr::new(Some(self.builder.ins().f32const(*num as f32))),
+                    types::F64 => ParseExpr::new(Some(self.builder.ins().f64const(*num))),
                     _ => unimplemented!(),
                 },
                 None => ParseExpr::empty(),
             },
             ExprType::Integer(num) => match get_type_from_str(expr.type_) {
                 Some(type_) => match type_ {
-                    types::I8 => ParseExpr::new(Some(self.builder.ins().iconst(types::I8, num))),
-                    types::I16 => ParseExpr::new(Some(self.builder.ins().iconst(types::I16, num))),
-                    types::I32 => ParseExpr::new(Some(self.builder.ins().iconst(types::I32, num))),
-                    types::I64 => ParseExpr::new(Some(self.builder.ins().iconst(types::I64, num))),
+                    types::I8 => ParseExpr::new(Some(self.builder.ins().iconst(types::I8, *num))),
+                    types::I16 => ParseExpr::new(Some(self.builder.ins().iconst(types::I16, *num))),
+                    types::I32 => ParseExpr::new(Some(self.builder.ins().iconst(types::I32, *num))),
+                    types::I64 => ParseExpr::new(Some(self.builder.ins().iconst(types::I64, *num))),
                     _ => unimplemented!(),
                 },
                 None => ParseExpr::empty(),
             },
-            ExprType::Variable(name) => match self.values.get(&name) {
+            ExprType::Variable(name) => match self.values.get(name) {
                 Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
                 None => {
                     return Err(Error::Undefined(format!("variable {}", name)));
                 }
             },
             ExprType::Binary(op, left, right) => {
-                let left = self.expr(*left)?.value.unwrap(); // TODO: unwrap these properly
-                let right = self.expr(*right)?.value.unwrap();
+                let left_value = self.expr(&left)?.value.unwrap(); // TODO: unwrap these properly
+                let mut right_value = self.expr(&right)?.value.unwrap();
                 match op {
-                    BinaryOp::Plus => ParseExpr::new(Some(self.builder.ins().fadd(left, right))),
-                    BinaryOp::Minus => ParseExpr::new(Some(self.builder.ins().fsub(left, right))),
-                    BinaryOp::Times => ParseExpr::new(Some(self.builder.ins().fmul(left, right))),
+                    BinaryOp::Plus => match left.type_ {
+                        typing::I64 => {
+                            // TODO: Add more basic type conversions
+                            if right.type_ != left.type_ {
+                                return Err(Error::MismatchedTypes(left.type_, right.type_));
+                            }
+                            ParseExpr::new(Some(self.builder.ins().iadd(left_value, right_value)))
+                        }
+                        typing::F64 => {
+                            // TODO: Change this into a function
+                            if right.type_ != left.type_ {
+                                right_value = self.cast(right_value, right.type_, left.type_)?;
+                            }
+                            ParseExpr::new(Some(self.builder.ins().fadd(left_value, right_value)))
+                        }
+                        _ => return Err(Error::Unexpected("can't add this type")),
+                    },
+                    BinaryOp::Minus => {
+                        ParseExpr::new(Some(self.builder.ins().fsub(left_value, right_value)))
+                    }
+                    BinaryOp::Times => {
+                        ParseExpr::new(Some(self.builder.ins().fmul(left_value, right_value)))
+                    }
                     BinaryOp::LessThan => ParseExpr::new(Some(self.builder.ins().fcmp(
                         FloatCC::LessThan,
-                        left,
-                        right,
+                        left_value,
+                        right_value,
                     ))),
                 }
             }
-            ExprType::Call(name, args) => match self.functions.get(&name) {
+            ExprType::Call(name, args) => match self.functions.get(name) {
                 Some(func) => {
                     if func.param_count != args.len() {
                         return Err(Error::WrongArgumentCount);
@@ -151,7 +185,7 @@ impl<'a> FunctionGenerator<'a> {
                         .module
                         .declare_func_in_func(func.id, &mut self.builder.func);
                     let arguments: Result<Vec<_>> =
-                        args.into_iter().map(|arg| self.expr(arg)).collect();
+                        args.into_iter().map(|arg| self.expr(&arg)).collect();
                     let arguments: Vec<Value> = arguments?
                         .into_iter()
                         .map(|arg| arg.value.unwrap()) // TODO: Properly unwrap arguments
@@ -168,7 +202,7 @@ impl<'a> FunctionGenerator<'a> {
             },
             ExprType::Block(exprs) => {
                 for expr in exprs {
-                    let parse_expr = self.expr(expr)?;
+                    let parse_expr = self.expr(&expr)?;
                     if parse_expr.is_return {
                         return Ok(parse_expr);
                     }
@@ -179,7 +213,7 @@ impl<'a> FunctionGenerator<'a> {
             ExprType::Return(expr) => {
                 match expr {
                     Some(expr) => {
-                        let value = self.expr(*expr)?;
+                        let value = self.expr(&*expr)?;
                         self.builder.ins().return_(&[value.value.unwrap()]); // TODO: Properly unwrap this
                         ParseExpr::new_return(value.value)
                     }
@@ -198,7 +232,7 @@ impl<'a> FunctionGenerator<'a> {
                     ParseExpr::empty()
                 }
                 Some(value) => {
-                    let parse_expr = self.expr(*value)?;
+                    let parse_expr = self.expr(&*value)?;
                     let variable = self.variable_builder.create_var(
                         &mut self.builder,
                         parse_expr.value.expect("value"),
@@ -209,8 +243,8 @@ impl<'a> FunctionGenerator<'a> {
                 }
             },
             ExprType::Assign(name, value) => {
-                let val = self.expr(*value)?;
-                let var = self.values.get(&name);
+                let val = self.expr(&*value)?;
+                let var = self.values.get(name);
                 match var {
                     Some(variable) => {
                         self.builder.def_var(*variable, val.value.unwrap());
@@ -242,6 +276,11 @@ impl Generator {
             module,
             variable_builder: VariableBuilder::new(),
         }
+    }
+
+    pub fn init_essential_lib(&mut self) -> Result<()> {
+        self.raw_func()?;
+        Ok(())
     }
 
     // pub fn get_function_exe<T>(&mut self, func_name: String) -> Option<fn() -> T> {
@@ -304,6 +343,110 @@ impl Generator {
         }
     }
 
+    pub fn raw_func(&mut self) -> Result<()> {
+        macro_rules! decl_cast {
+            ($from:literal,$to:literal,$exec:block) => {
+                let mut context = self.module.make_context();
+                let signature = &mut context.func.signature;
+                signature
+                    .params
+                    .push(AbiParam::new(typing::get_type_from_str($from).unwrap()));
+                signature
+                    .returns
+                    .push(AbiParam::new(typing::get_type_from_str($to).unwrap()));
+
+                let parameters = vec![Parameter {
+                    name: "val".to_string(),
+                    type_: $from,
+                }];
+
+                let prototype = Prototype {
+                    function_name: format!("{}->{}", $from, $to),
+                    parameters,
+                    return_type: $to,
+                };
+
+                let func_id = self.prototype(&prototype, Linkage::Export)?;
+
+                // Creates new block for function
+                let mut builder =
+                    FunctionBuilder::new(&mut context.func, &mut self.builder_context);
+                let entry_block = builder.create_block();
+                builder.append_block_params_for_function_params(entry_block);
+                builder.switch_to_block(entry_block);
+                builder.seal_block(entry_block);
+
+                // Add parameters to stack
+                let val = builder.block_params(entry_block)[0];
+
+                let return_value: Value = $exec(&mut builder, &val);
+
+                builder.ins().return_(&[return_value]);
+
+                if let Some(ref mut function) = self.functions.get_mut("i64->f64") {
+                    function.defined = true;
+                }
+                builder.finalize();
+                println!("{}", context.func.display().to_string());
+
+                self.module.define_function(func_id, &mut context)?;
+                self.module.clear_context(&mut context);
+            };
+        }
+
+        // Int -> Float
+        decl_cast!("i8", "f32", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F32, *val)
+            }
+        });
+
+        decl_cast!("i16", "f32", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F32, *val)
+            }
+        });
+
+        decl_cast!("i32", "f32", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F32, *val)
+            }
+        });
+
+        decl_cast!("i64", "f32", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F32, *val)
+            }
+        });
+
+        // Int -> Double
+        decl_cast!("i8", "f64", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F64, *val)
+            }
+        });
+
+        decl_cast!("i16", "f64", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F64, *val)
+            }
+        });
+
+        decl_cast!("i32", "f64", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F64, *val)
+            }
+        });
+
+        decl_cast!("i64", "f64", {
+            |builder: &mut FunctionBuilder, val: &Value| {
+                builder.ins().fcvt_from_sint(types::F64, *val)
+            }
+        });
+
+        Ok(())
+    }
+
     pub fn function(&mut self, function: Function) -> Result<()> {
         let mut context = self.module.make_context();
         let mut signature = &mut context.func.signature;
@@ -345,7 +488,7 @@ impl Generator {
             variable_builder: &mut self.variable_builder,
         };
 
-        match generator.expr(function.body) {
+        match generator.expr(&function.body) {
             Ok(value) => value,
             Err(error) => {
                 dbg!(&error);

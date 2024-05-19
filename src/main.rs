@@ -20,6 +20,9 @@ fn main() -> Result<()> {
     let lexer = Lexer::new(file);
     let mut parser = Parser::new(lexer);
     let mut generator = Generator::new();
+
+    generator.init_essential_lib()?;
+
     loop {
         let token = match parser.lexer.peek(0) {
             Ok(ref token) => *token,
