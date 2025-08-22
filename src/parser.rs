@@ -16,10 +16,13 @@ pub struct Parser<R: Read> {
 impl<R: Read> Parser<R> {
     pub fn new(lexer: Lexer<R>) -> Self {
         let mut bin_precedence = HashMap::new();
+
         bin_precedence.insert(BinaryOp::LessThan, 10);
+        bin_precedence.insert(BinaryOp::Equal, 10);
         bin_precedence.insert(BinaryOp::Plus, 20);
         bin_precedence.insert(BinaryOp::Minus, 20);
         bin_precedence.insert(BinaryOp::Times, 40);
+
         return Self {
             type_map: HashMap::new(),
             bin_precedence,
@@ -44,6 +47,25 @@ impl<R: Read> Parser<R> {
         Ok(Function { prototype, body })
     }
 
+    fn if_(&mut self) -> Result<Expr> {
+        self.eat(Token::If)?;
+
+        self.eat(Token::OpenParen)?;
+        let condition = Box::new(self.expr()?);
+        self.eat(Token::CloseParen)?;
+
+        let then = Box::new(self.block(typing::ANY)?);
+        let mut else_ = None;
+        if *self.lexer.peek(0)? == Token::Else {
+            self.eat(Token::Else)?;
+            else_ = Some(Box::new(self.block(typing::ANY)?));
+        }
+        Ok(Expr {
+            expr_type: ExprType::IfElse(condition, then, else_),
+            type_: typing::VOID,
+        })
+    }
+
     fn block(&mut self, type_: &'static str) -> Result<Expr> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
@@ -54,25 +76,37 @@ impl<R: Read> Parser<R> {
                     self.eat(Token::Return)?;
                     let peek = self.lexer.peek(0)?;
                     if *peek == Token::SemiColon {
+                        self.eat(Token::SemiColon)?;
                         exprs.push(Expr {
                             expr_type: ExprType::Return(None),
                             type_: typing::VOID,
                         })
                     } else {
                         let expr = Box::new(self.expr()?);
+                        self.eat(Token::SemiColon)?;
                         exprs.push(Expr {
                             type_: expr.type_,
                             expr_type: ExprType::Return(Some(expr)),
                         })
                     }
                 }
-                Token::Let => exprs.push(self.let_()?),
-                Token::Identifier(_) if *self.lexer.peek(1)? == Token::Equal => {
-                    exprs.push(self.assign()?)
+                Token::Let => {
+                    let expr = self.let_()?;
+                    self.eat(Token::SemiColon)?;
+                    exprs.push(expr)
                 }
-                _ => exprs.push(self.expr()?),
+                Token::Identifier(_) if *self.lexer.peek(1)? == Token::Equal => {
+                    let expr = self.assign()?;
+                    self.eat(Token::SemiColon)?;
+                    exprs.push(expr)
+                }
+                Token::If => exprs.push(self.if_()?),
+                _ => {
+                    let expr = self.expr()?;
+                    self.eat(Token::SemiColon)?;
+                    exprs.push(expr);
+                }
             }
-            self.eat(Token::SemiColon)?;
             let peek = self.lexer.peek(0)?;
             if *peek == Token::CloseBracket {
                 self.eat(Token::CloseBracket)?;
@@ -88,6 +122,7 @@ impl<R: Read> Parser<R> {
     fn let_(&mut self) -> Result<Expr> {
         self.eat(Token::Let)?;
         let name = self.identifier()?;
+
         let token = self.lexer.peek(0)?;
         let mut type_: &str = typing::ANY;
         if *token == Token::Colon {
@@ -100,6 +135,7 @@ impl<R: Read> Parser<R> {
             Token::Equal => {
                 self.eat(Token::Equal)?;
                 let expr = self.expr()?;
+
                 if type_.is_empty() || expr.type_ == type_ {
                     if let Some(_) = self.type_map.insert(name.clone(), expr.type_) {
                         return Err(Error::VariableRedef);
@@ -139,6 +175,7 @@ impl<R: Read> Parser<R> {
         })
     }
 
+    /// Eats the next token if it matches the given token
     fn eat(&mut self, token: Token) -> Result<()> {
         let current_token = self.lexer.next_token()?;
         if current_token != token {
@@ -184,6 +221,7 @@ impl<R: Read> Parser<R> {
         let mut accept_more = true;
         loop {
             match self.lexer.peek(0)? {
+                // Should parse identifier : type
                 Token::Identifier(_) => {
                     if !accept_more {
                         return Err(Error::Unexpected("operator, expected ','"));
@@ -194,12 +232,15 @@ impl<R: Read> Parser<R> {
                         Token::Identifier(id) => id,
                         _ => unreachable!(),
                     };
+
                     self.eat(Token::Colon)?;
+
                     let type_ =
                         typing::get_const_str_from_string(match self.lexer.next_token()? {
                             Token::Identifier(t) => t,
                             _ => return Err(Error::Unexpected("type token")),
                         });
+
                     params.push(Parameter { name, type_ });
                 }
                 Token::CloseParen => {
@@ -325,6 +366,7 @@ impl<R: Read> Parser<R> {
             Token::Minus => BinaryOp::Minus,
             Token::Plus => BinaryOp::Plus,
             Token::Star => BinaryOp::Times,
+            Token::DoubleEqual => BinaryOp::Equal,
             _ => return Ok(None),
         };
         Ok(Some(op))

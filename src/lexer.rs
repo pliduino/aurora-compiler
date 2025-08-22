@@ -72,7 +72,14 @@ impl<R: Read> Lexer<R> {
                         b')' => Token::CloseParen,
                         b'{' => Token::OpenBracket,
                         b'}' => Token::CloseBracket,
-                        b'=' => Token::Equal,
+                        b'=' => {
+                            if self.peek_char()? == Some('=') {
+                                self.bytes.next();
+                                Token::DoubleEqual
+                            } else {
+                                Token::Equal
+                            }
+                        }
                         b':' => Token::Colon,
                         _ => return Err(UnknownChar(byte as char)),
                     };
@@ -113,6 +120,8 @@ impl<R: Read> Lexer<R> {
             "extern" => Token::Extern,
             "return" => Token::Return,
             "let" => Token::Let,
+            "if" => Token::If,
+            "else" => Token::Else,
             _ => Token::Identifier(identifier),
         };
 
@@ -184,6 +193,10 @@ pub enum Token {
     Extern,
     Let,
 
+    // Flow
+    If,
+    Else,
+
     // Primary
     Identifier(String),
     Integer(i64),
@@ -196,6 +209,7 @@ pub enum Token {
     Star,
 
     Equal,
+    DoubleEqual,
 
     // Other
     Colon,
@@ -231,6 +245,9 @@ impl Display for Token {
             Token::Equal => write!(f, "="),
             Token::Let => write!(f, "let"),
             Token::Colon => write!(f, ":"),
+            Token::DoubleEqual => write!(f, "=="),
+            Token::If => write!(f, "if"),
+            Token::Else => write!(f, "else"),
         }
     }
 }

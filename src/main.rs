@@ -30,7 +30,7 @@ fn main() -> Result<()> {
             Ok(ref token) => *token,
             Err(error) => {
                 eprintln!(
-                    "{}:{}:{} Error: {:?}",
+                    "\x1b[91m[{}:{}:{}] Error: {:?}\x1b[0m",
                     filename,
                     parser.lexer.get_line(),
                     parser.lexer.get_pos(),
@@ -54,7 +54,7 @@ fn main() -> Result<()> {
                     Err(error) => {
                         parser.lexer.next_token()?;
                         eprintln!(
-                            "{}:{}:{} Error: {:?}",
+                            "\x1b[91m[{}:{}:{}] Error: {:?}\x1b[0m",
                             filename,
                             parser.lexer.get_line(),
                             parser.lexer.get_pos(),
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
                     Err(error) => {
                         parser.lexer.next_token()?;
                         eprintln!(
-                            "{}:{}:{} Error: {:?}",
+                            "\x1b[91m[{}:{}:{}] Error: {:?}\x1b[0m",
                             filename,
                             parser.lexer.get_line(),
                             parser.lexer.get_pos(),
@@ -81,7 +81,7 @@ fn main() -> Result<()> {
                     }
                 }
             }
-            _ => return Err(Error::Unexpected("Unexpected top level token")),
+            _ => return Err(Error::Unexpected("top level token")),
         }
     }
 

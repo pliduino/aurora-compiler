@@ -8,6 +8,7 @@ use cranelift::{
         settings::{self},
     },
     frontend::{FunctionBuilder, FunctionBuilderContext, Variable},
+    prelude::IntCC,
 };
 use cranelift_module::{default_libcall_names, FuncId, Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
@@ -74,14 +75,14 @@ struct ParseExpr {
 impl ParseExpr {
     pub fn new(value: Option<Value>) -> Self {
         Self {
-            value: value,
+            value,
             is_return: false,
         }
     }
 
     pub fn new_return(value: Option<Value>) -> Self {
         Self {
-            value: value,
+            value,
             is_return: true,
         }
     }
@@ -118,6 +119,35 @@ impl<'a> FunctionGenerator<'a> {
 
     fn expr(&mut self, expr: &Expr) -> Result<ParseExpr> {
         let value = match &expr.expr_type {
+            ExprType::IfElse(condition, then, else_) => {
+                let condition = self.expr(condition)?.value.unwrap();
+
+                let if_block = self.builder.create_block();
+                let else_block = self.builder.create_block();
+                let cont_block = self.builder.create_block();
+
+                self.builder
+                    .ins()
+                    .brif(condition, if_block, &[], else_block, &[]);
+
+                self.builder.switch_to_block(if_block);
+                self.builder.seal_block(if_block);
+
+                let then = self.expr(then)?.value;
+                self.builder.ins().jump(cont_block, &[]);
+
+                self.builder.switch_to_block(else_block);
+                self.builder.seal_block(else_block);
+                if let Some(expr) = else_ {
+                    let else_ = self.expr(expr)?.value;
+                }
+                self.builder.ins().jump(cont_block, &[]);
+
+                self.builder.switch_to_block(cont_block);
+                self.builder.seal_block(cont_block);
+
+                ParseExpr::empty()
+            }
             ExprType::Float(num) => match get_type_from_str(expr.type_) {
                 Some(type_) => match type_ {
                     types::F32 => ParseExpr::new(Some(self.builder.ins().f32const(*num as f32))),
@@ -169,6 +199,19 @@ impl<'a> FunctionGenerator<'a> {
                     BinaryOp::Times => {
                         ParseExpr::new(Some(self.builder.ins().fmul(left_value, right_value)))
                     }
+                    BinaryOp::Equal => match left.type_ {
+                        typing::I64 => ParseExpr::new(Some(self.builder.ins().icmp(
+                            IntCC::Equal,
+                            left_value,
+                            right_value,
+                        ))),
+                        typing::F64 => ParseExpr::new(Some(self.builder.ins().fcmp(
+                            FloatCC::Equal,
+                            left_value,
+                            right_value,
+                        ))),
+                        _ => return Err(Error::Unexpected("can't compare this type")),
+                    },
                     BinaryOp::LessThan => ParseExpr::new(Some(self.builder.ins().fcmp(
                         FloatCC::LessThan,
                         left_value,
@@ -207,7 +250,7 @@ impl<'a> FunctionGenerator<'a> {
                         return Ok(parse_expr);
                     }
                 }
-                self.builder.ins().return_(&[]);
+                // self.builder.ins().return_(&[]);
                 ParseExpr::empty()
             }
             ExprType::Return(expr) => {

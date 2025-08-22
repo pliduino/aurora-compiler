@@ -4,6 +4,7 @@ pub enum BinaryOp {
     Minus,
     Plus,
     Times,
+    Equal,
 }
 
 // TODO: Add types to expressions
@@ -18,6 +19,7 @@ pub enum ExprType {
     Variable(String),
     Block(Vec<Expr>),
     Return(Option<Box<Expr>>),
+    IfElse(Box<Expr>, Box<Expr>, Option<Box<Expr>>), // Condition -> if -> else
 }
 
 #[derive(Debug)]
