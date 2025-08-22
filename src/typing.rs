@@ -8,6 +8,7 @@ pub fn get_type_from_str(str: &str) -> Option<Type> {
         I64 => Some(types::I64),
         F32 => Some(types::F32),
         F64 => Some(types::F64),
+        BOOL => Some(types::I8),
         VOID => None,
         _ => None, // TODO: Trigger error
     }
@@ -16,6 +17,8 @@ pub fn get_type_from_str(str: &str) -> Option<Type> {
 pub fn get_const_str_from_string(str: String) -> &'static str {
     match str.as_str() {
         VOID => VOID,
+
+        BOOL => BOOL,
 
         I8 => I8,
         I16 => I16,
@@ -31,6 +34,8 @@ pub fn get_const_str_from_string(str: String) -> &'static str {
 
 pub const ANY: &str = "";
 pub const VOID: &str = "void";
+
+pub const BOOL: &str = "bool";
 
 pub const I8: &str = "i8";
 pub const I16: &str = "i16";

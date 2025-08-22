@@ -211,8 +211,7 @@ impl<'a> FunctionGenerator<'a> {
                 let mut right_value = self.expr(&right)?.value.unwrap();
                 match op {
                     BinaryOp::Plus => match left.type_ {
-                        typing::I64 => {
-                            // TODO: Add more basic type conversions
+                        typing::I64 | typing::I32 | typing::I16 | typing::I8 | typing::BOOL => {
                             if right.type_ != left.type_ {
                                 return Err(Error::MismatchedTypes(left.type_, right.type_));
                             }
@@ -240,12 +239,14 @@ impl<'a> FunctionGenerator<'a> {
                         ParseExpr::new(Some(self.builder.ins().fmul(left_value, right_value)))
                     }
                     BinaryOp::Equal => match left.type_ {
-                        typing::I64 => ParseExpr::new(Some(self.builder.ins().icmp(
-                            IntCC::Equal,
-                            left_value,
-                            right_value,
-                        ))),
-                        typing::F64 => ParseExpr::new(Some(self.builder.ins().fcmp(
+                        typing::I64 | typing::I32 | typing::I16 | typing::I8 | typing::BOOL => {
+                            ParseExpr::new(Some(self.builder.ins().icmp(
+                                IntCC::Equal,
+                                left_value,
+                                right_value,
+                            )))
+                        }
+                        typing::F64 | typing::F32 => ParseExpr::new(Some(self.builder.ins().fcmp(
                             FloatCC::Equal,
                             left_value,
                             right_value,

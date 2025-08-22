@@ -286,6 +286,13 @@ impl<R: Read> Parser<R> {
                     type_: typing::F64,
                 })
             }
+            Token::Boolean(b) => {
+                self.lexer.next_token()?;
+                Ok(Expr {
+                    expr_type: ExprType::Boolean(b),
+                    type_: typing::BOOL,
+                })
+            }
             Token::Integer(i) => {
                 self.lexer.next_token()?;
                 Ok(Expr {

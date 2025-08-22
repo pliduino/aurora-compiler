@@ -1,4 +1,4 @@
-use std::{fs::File, io::Write};
+use std::{fs::File, io::Write, path::PathBuf};
 
 use cranelift_module::Linkage;
 use error::{Error, Result};
@@ -13,6 +13,13 @@ mod gen;
 mod lexer;
 mod parser;
 mod typing;
+
+// #[derive(clap::Parser, Debug)]
+// #[command(version, about, long_about = None)]
+// struct CliArguments {
+//     #[arg(short, long)]
+//     output: String,
+// }
 
 fn main() -> Result<()> {
     let filename = "example/test.au";
