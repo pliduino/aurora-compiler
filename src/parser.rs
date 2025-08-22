@@ -4,11 +4,12 @@ use crate::{
     ast::{BinaryOp, Expr, ExprType, Function, Parameter, Prototype},
     error::{Error, Result},
     lexer::{Lexer, Token},
-    typing,
+    typing::{self, AuroraType},
 };
 
 pub struct Parser<R: Read> {
-    type_map: HashMap<String, &'static str>,
+    /// Map of variable names to their types
+    type_map: HashMap<String, AuroraType>,
     bin_precedence: HashMap<BinaryOp, i32>,
     pub lexer: Lexer<R>,
 }
@@ -54,15 +55,15 @@ impl<R: Read> Parser<R> {
         let condition = Box::new(self.expr()?);
         self.eat(Token::CloseParen)?;
 
-        let then = Box::new(self.block(typing::ANY)?);
+        let then = Box::new(self.block(AuroraType::Any)?);
         let mut else_ = None;
         if *self.lexer.peek(0)? == Token::Else {
             self.eat(Token::Else)?;
-            else_ = Some(Box::new(self.block(typing::ANY)?));
+            else_ = Some(Box::new(self.block(AuroraType::Any)?));
         }
         Ok(Expr {
             expr_type: ExprType::IfElse(condition, then, else_),
-            type_: typing::VOID,
+            type_: AuroraType::Void,
         })
     }
 
@@ -73,15 +74,15 @@ impl<R: Read> Parser<R> {
         let condition = Box::new(self.expr()?);
         self.eat(Token::CloseParen)?;
 
-        let while_block = Box::new(self.block(typing::ANY)?);
+        let while_block = Box::new(self.block(AuroraType::Any)?);
 
         Ok(Expr {
             expr_type: ExprType::While(condition, while_block),
-            type_: typing::VOID,
+            type_: AuroraType::Void,
         })
     }
 
-    fn block(&mut self, type_: &'static str) -> Result<Expr> {
+    fn block(&mut self, type_: AuroraType) -> Result<Expr> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
         loop {
@@ -94,7 +95,7 @@ impl<R: Read> Parser<R> {
                         self.eat(Token::SemiColon)?;
                         exprs.push(Expr {
                             expr_type: ExprType::Return(None),
-                            type_: typing::VOID,
+                            type_: AuroraType::Void,
                         })
                     } else {
                         let expr = Box::new(self.expr()?);
@@ -140,10 +141,10 @@ impl<R: Read> Parser<R> {
         let name = self.identifier()?;
 
         let token = self.lexer.peek(0)?;
-        let mut type_: &str = typing::ANY;
+        let mut type_ = AuroraType::Any;
         if *token == Token::Colon {
             self.eat(Token::Colon)?;
-            type_ = typing::get_const_str_from_string(self.identifier()?);
+            type_ = AuroraType::from_string(&self.identifier()?);
         }
 
         let peek = self.lexer.peek(0)?;
@@ -152,7 +153,7 @@ impl<R: Read> Parser<R> {
                 self.eat(Token::Equal)?;
                 let expr = self.expr()?;
 
-                if type_.is_empty() || expr.type_ == type_ {
+                if type_ == AuroraType::Any || expr.type_ == type_ {
                     if let Some(_) = self.type_map.insert(name.clone(), expr.type_) {
                         return Err(Error::VariableRedef);
                     }
@@ -169,7 +170,7 @@ impl<R: Read> Parser<R> {
                 if let Some(_) = self.type_map.insert(name.clone(), type_) {
                     return Err(Error::VariableRedef);
                 }
-                if type_ == typing::ANY {
+                if type_ == AuroraType::Any {
                     return Err(Error::Undefined("type".to_string())); //TODO: Remove this and try to infer it later via type_map
                 }
                 Ok(Expr {
@@ -204,8 +205,8 @@ impl<R: Read> Parser<R> {
         let function_name = self.identifier()?;
         let parameters = self.parameters()?;
         let return_type = match self.lexer.peek(0)? {
-            Token::Identifier(_) => typing::get_const_str_from_string(self.identifier()?),
-            _ => typing::VOID,
+            Token::Identifier(_) => AuroraType::from_string(&self.identifier()?),
+            _ => AuroraType::Void,
         };
 
         if let Some(_) = self.type_map.insert(function_name.clone(), return_type) {
@@ -251,11 +252,10 @@ impl<R: Read> Parser<R> {
 
                     self.eat(Token::Colon)?;
 
-                    let type_ =
-                        typing::get_const_str_from_string(match self.lexer.next_token()? {
-                            Token::Identifier(t) => t,
-                            _ => return Err(Error::Unexpected("type token")),
-                        });
+                    let type_ = AuroraType::from_string(&match self.lexer.next_token()? {
+                        Token::Identifier(t) => t,
+                        _ => return Err(Error::Unexpected("type token")),
+                    });
 
                     params.push(Parameter { name, type_ });
                 }
@@ -283,21 +283,21 @@ impl<R: Read> Parser<R> {
                 self.lexer.next_token()?;
                 Ok(Expr {
                     expr_type: ExprType::Float(f),
-                    type_: typing::F64,
+                    type_: AuroraType::F64,
                 })
             }
             Token::Boolean(b) => {
                 self.lexer.next_token()?;
                 Ok(Expr {
                     expr_type: ExprType::Boolean(b),
-                    type_: typing::BOOL,
+                    type_: AuroraType::Bool,
                 })
             }
             Token::Integer(i) => {
                 self.lexer.next_token()?;
                 Ok(Expr {
                     expr_type: ExprType::Integer(i),
-                    type_: typing::I64,
+                    type_: AuroraType::I64,
                 })
             }
             Token::OpenParen => {

@@ -1,3 +1,5 @@
+use crate::typing::AuroraType;
+
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum BinaryOp {
     LessThan,
@@ -28,7 +30,7 @@ pub enum ExprType {
 #[derive(Debug)]
 pub struct Expr {
     pub expr_type: ExprType,
-    pub type_: &'static str,
+    pub type_: AuroraType,
 }
 
 #[derive(Debug)]
@@ -40,12 +42,12 @@ pub struct Function {
 #[derive(Debug)]
 pub struct Parameter {
     pub name: String,
-    pub type_: &'static str,
+    pub type_: AuroraType,
 }
 
 #[derive(Debug)]
 pub struct Prototype {
     pub function_name: String,
     pub parameters: Vec<Parameter>,
-    pub return_type: &'static str,
+    pub return_type: AuroraType,
 }

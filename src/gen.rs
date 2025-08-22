@@ -17,7 +17,7 @@ use target_lexicon::triple;
 use crate::{
     ast::{BinaryOp, Expr, ExprType, Function, Parameter, Prototype},
     error::{Error, Result},
-    typing::{self, get_type_from_str},
+    typing::AuroraType,
 };
 
 struct VariableBuilder {
@@ -107,7 +107,7 @@ impl ParseExpr {
 }
 
 impl<'a> FunctionGenerator<'a> {
-    fn cast(&mut self, value: Value, from: &'static str, to: &'static str) -> Result<Value> {
+    fn cast(&mut self, value: Value, from: AuroraType, to: AuroraType) -> Result<Value> {
         match self.functions.get(&format!("{}->{}", from, to)) {
             Some(func) => {
                 let local_func = self
@@ -179,7 +179,7 @@ impl<'a> FunctionGenerator<'a> {
 
                 ParseExpr::empty()
             }
-            ExprType::Float(num) => match get_type_from_str(expr.type_) {
+            ExprType::Float(num) => match expr.type_.get_type() {
                 Some(type_) => match type_ {
                     types::F32 => ParseExpr::new(Some(self.builder.ins().f32const(*num as f32))),
                     types::F64 => ParseExpr::new(Some(self.builder.ins().f64const(*num))),
@@ -187,7 +187,7 @@ impl<'a> FunctionGenerator<'a> {
                 },
                 None => ParseExpr::empty(),
             },
-            ExprType::Integer(num) => match get_type_from_str(expr.type_) {
+            ExprType::Integer(num) => match expr.type_.get_type() {
                 Some(type_) => match type_ {
                     types::I8 => ParseExpr::new(Some(self.builder.ins().iconst(types::I8, *num))),
                     types::I16 => ParseExpr::new(Some(self.builder.ins().iconst(types::I16, *num))),
@@ -211,13 +211,17 @@ impl<'a> FunctionGenerator<'a> {
                 let mut right_value = self.expr(&right)?.value.unwrap();
                 match op {
                     BinaryOp::Plus => match left.type_ {
-                        typing::I64 | typing::I32 | typing::I16 | typing::I8 | typing::BOOL => {
+                        AuroraType::I64
+                        | AuroraType::I32
+                        | AuroraType::I16
+                        | AuroraType::I8
+                        | AuroraType::Bool => {
                             if right.type_ != left.type_ {
                                 return Err(Error::MismatchedTypes(left.type_, right.type_));
                             }
                             ParseExpr::new(Some(self.builder.ins().iadd(left_value, right_value)))
                         }
-                        typing::F64 => {
+                        AuroraType::F64 | AuroraType::F32 => {
                             // TODO: Change this into a function
                             if right.type_ != left.type_ {
                                 right_value = self.cast(right_value, right.type_, left.type_)?;
@@ -227,10 +231,10 @@ impl<'a> FunctionGenerator<'a> {
                         _ => return Err(Error::Unexpected("can't add this type")),
                     },
                     BinaryOp::Minus => match left.type_ {
-                        typing::F64 | typing::F32 => {
+                        AuroraType::F64 | AuroraType::F32 => {
                             ParseExpr::new(Some(self.builder.ins().fsub(left_value, right_value)))
                         }
-                        typing::I64 | typing::I32 | typing::I16 | typing::I8 => {
+                        AuroraType::I64 | AuroraType::I32 | AuroraType::I16 | AuroraType::I8 => {
                             ParseExpr::new(Some(self.builder.ins().isub(left_value, right_value)))
                         }
                         _ => return Err(Error::Unexpected("can't subtract this type")),
@@ -239,27 +243,29 @@ impl<'a> FunctionGenerator<'a> {
                         ParseExpr::new(Some(self.builder.ins().fmul(left_value, right_value)))
                     }
                     BinaryOp::Equal => match left.type_ {
-                        typing::I64 | typing::I32 | typing::I16 | typing::I8 | typing::BOOL => {
-                            ParseExpr::new(Some(self.builder.ins().icmp(
-                                IntCC::Equal,
-                                left_value,
-                                right_value,
-                            )))
-                        }
-                        typing::F64 | typing::F32 => ParseExpr::new(Some(self.builder.ins().fcmp(
-                            FloatCC::Equal,
+                        AuroraType::I64
+                        | AuroraType::I32
+                        | AuroraType::I16
+                        | AuroraType::I8
+                        | AuroraType::Bool => ParseExpr::new(Some(self.builder.ins().icmp(
+                            IntCC::Equal,
                             left_value,
                             right_value,
                         ))),
+                        AuroraType::F64 | AuroraType::F32 => ParseExpr::new(Some(
+                            self.builder
+                                .ins()
+                                .fcmp(FloatCC::Equal, left_value, right_value),
+                        )),
                         _ => return Err(Error::Unexpected("can't compare this type")),
                     },
                     BinaryOp::LessThan => match left.type_ {
-                        typing::F64 | typing::F32 => ParseExpr::new(Some(self.builder.ins().fcmp(
-                            FloatCC::LessThan,
-                            left_value,
-                            right_value,
-                        ))),
-                        typing::I64 | typing::I32 | typing::I16 | typing::I8 => {
+                        AuroraType::F64 | AuroraType::F32 => ParseExpr::new(Some(
+                            self.builder
+                                .ins()
+                                .fcmp(FloatCC::LessThan, left_value, right_value),
+                        )),
+                        AuroraType::I64 | AuroraType::I32 | AuroraType::I16 | AuroraType::I8 => {
                             ParseExpr::new(Some(self.builder.ins().icmp(
                                 IntCC::SignedLessThan,
                                 left_value,
@@ -321,7 +327,7 @@ impl<'a> FunctionGenerator<'a> {
                 None => {
                     let variable = self
                         .variable_builder
-                        .define_var(&mut self.builder, get_type_from_str(&expr.type_).unwrap());
+                        .define_var(&mut self.builder, expr.type_.get_type().unwrap());
                     self.values.insert(name.clone(), variable);
                     ParseExpr::empty()
                 }
@@ -330,7 +336,7 @@ impl<'a> FunctionGenerator<'a> {
                     let variable = self.variable_builder.create_var(
                         &mut self.builder,
                         parse_expr.value.expect("value"),
-                        get_type_from_str(&expr.type_).unwrap(),
+                        expr.type_.get_type().unwrap(),
                     );
                     self.values.insert(name.clone(), variable);
                     parse_expr
@@ -389,11 +395,11 @@ impl Generator {
 
     fn signature_append_from_prototype(&self, prototype: &Prototype, signature: &mut Signature) {
         for parameter in &prototype.parameters {
-            let type_ = get_type_from_str(&parameter.type_).expect("Parameter can't be void");
+            let type_ = parameter.type_.get_type().expect("Parameter can't be void");
             signature.params.push(AbiParam::new(type_));
         }
 
-        let return_type = get_type_from_str(&prototype.return_type);
+        let return_type = prototype.return_type.get_type();
         if let Some(tp) = return_type {
             signature.returns.push(AbiParam::new(tp));
         }
@@ -416,7 +422,7 @@ impl Generator {
                         defined: false,
                         id,
                         param_count: prototype.parameters.len(),
-                        return_count: if prototype.return_type == "void" {
+                        return_count: if prototype.return_type == AuroraType::Void {
                             0
                         } else {
                             1
@@ -439,15 +445,15 @@ impl Generator {
 
     pub fn raw_func(&mut self) -> Result<()> {
         macro_rules! decl_cast {
-            ($from:literal,$to:literal,$exec:block) => {
+            ($from:expr,$to:expr,$exec:block) => {
                 let mut context = self.module.make_context();
                 let signature = &mut context.func.signature;
                 signature
                     .params
-                    .push(AbiParam::new(typing::get_type_from_str($from).unwrap()));
+                    .push(AbiParam::new($from.get_type().unwrap()));
                 signature
                     .returns
-                    .push(AbiParam::new(typing::get_type_from_str($to).unwrap()));
+                    .push(AbiParam::new($to.get_type().unwrap()));
 
                 let parameters = vec![Parameter {
                     name: "val".to_string(),
@@ -489,50 +495,50 @@ impl Generator {
         }
 
         // Int -> Float
-        decl_cast!("i8", "f32", {
+        decl_cast!(AuroraType::I8, AuroraType::F32, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F32, *val)
             }
         });
 
-        decl_cast!("i16", "f32", {
+        decl_cast!(AuroraType::I16, AuroraType::F32, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F32, *val)
             }
         });
 
-        decl_cast!("i32", "f32", {
+        decl_cast!(AuroraType::I32, AuroraType::F32, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F32, *val)
             }
         });
 
-        decl_cast!("i64", "f32", {
+        decl_cast!(AuroraType::I64, AuroraType::F32, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F32, *val)
             }
         });
 
         // Int -> Double
-        decl_cast!("i8", "f64", {
+        decl_cast!(AuroraType::I8, AuroraType::F64, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F64, *val)
             }
         });
 
-        decl_cast!("i16", "f64", {
+        decl_cast!(AuroraType::I16, AuroraType::F64, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F64, *val)
             }
         });
 
-        decl_cast!("i32", "f64", {
+        decl_cast!(AuroraType::I32, AuroraType::F64, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F64, *val)
             }
         });
 
-        decl_cast!("i64", "f64", {
+        decl_cast!(AuroraType::I64, AuroraType::F64, {
             |builder: &mut FunctionBuilder, val: &Value| {
                 builder.ins().fcvt_from_sint(types::F64, *val)
             }
@@ -565,7 +571,7 @@ impl Generator {
             let variable = self.variable_builder.create_var(
                 &mut builder,
                 val,
-                get_type_from_str(&parameter.type_).unwrap(), // Safe to unwrap, it would've panicked while making the prototype otherwise
+                parameter.type_.get_type().unwrap(), // Safe to unwrap, it would've panicked while making the prototype otherwise
             );
             values.insert(parameter.name.clone(), variable);
         }

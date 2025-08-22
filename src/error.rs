@@ -6,6 +6,7 @@ use cranelift::codegen::CodegenError;
 use cranelift_module::ModuleError;
 
 use crate::lexer::Token;
+use crate::typing::AuroraType;
 
 use self::Error::*;
 
@@ -25,7 +26,7 @@ pub enum Error {
     VariableRedef,
     FunctionRedef,
     FunctionRedefWithDifferentParams,
-    MismatchedTypes(&'static str, &'static str),
+    MismatchedTypes(AuroraType, AuroraType),
 }
 
 impl Debug for Error {
