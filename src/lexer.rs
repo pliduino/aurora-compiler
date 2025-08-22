@@ -122,6 +122,9 @@ impl<R: Read> Lexer<R> {
             "let" => Token::Let,
             "if" => Token::If,
             "else" => Token::Else,
+            "true" => Token::Boolean(true),
+            "false" => Token::Boolean(false),
+            "while" => Token::While,
             _ => Token::Identifier(identifier),
         };
 
@@ -196,11 +199,13 @@ pub enum Token {
     // Flow
     If,
     Else,
+    While,
 
     // Primary
     Identifier(String),
     Integer(i64),
     Float(f64),
+    Boolean(bool),
 
     // Operators
     LessThan,
@@ -248,6 +253,9 @@ impl Display for Token {
             Token::DoubleEqual => write!(f, "=="),
             Token::If => write!(f, "if"),
             Token::Else => write!(f, "else"),
+            Token::While => write!(f, "while"),
+            Token::Boolean(true) => write!(f, "true"),
+            Token::Boolean(false) => write!(f, "false"),
         }
     }
 }

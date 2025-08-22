@@ -66,6 +66,21 @@ impl<R: Read> Parser<R> {
         })
     }
 
+    fn while_(&mut self) -> Result<Expr> {
+        self.eat(Token::While)?;
+
+        self.eat(Token::OpenParen)?;
+        let condition = Box::new(self.expr()?);
+        self.eat(Token::CloseParen)?;
+
+        let while_block = Box::new(self.block(typing::ANY)?);
+
+        Ok(Expr {
+            expr_type: ExprType::While(condition, while_block),
+            type_: typing::VOID,
+        })
+    }
+
     fn block(&mut self, type_: &'static str) -> Result<Expr> {
         let mut exprs: Vec<Expr> = vec![];
         self.eat(Token::OpenBracket)?;
@@ -101,6 +116,7 @@ impl<R: Read> Parser<R> {
                     exprs.push(expr)
                 }
                 Token::If => exprs.push(self.if_()?),
+                Token::While => exprs.push(self.while_()?),
                 _ => {
                     let expr = self.expr()?;
                     self.eat(Token::SemiColon)?;

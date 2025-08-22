@@ -87,9 +87,10 @@ fn main() -> Result<()> {
 
     let mut object = generator.module.finish().emit().unwrap();
 
-    let mut output_file = File::create("./build/test.o")?;
-    output_file.write_all(&mut object)?;
-    drop(output_file);
+    {
+        let mut output_file = File::create("./build/test.o")?;
+        output_file.write_all(&mut object)?;
+    }
 
     _ = std::process::Command::new("gcc")
         .args(&[

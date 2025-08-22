@@ -13,13 +13,15 @@ pub enum ExprType {
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Call(String, Vec<Expr>),
     Integer(i64),
+    Boolean(bool),
     Float(f64),
     Let(String, Option<Box<Expr>>),
     Assign(String, Box<Expr>),
     Variable(String),
     Block(Vec<Expr>),
     Return(Option<Box<Expr>>),
-    IfElse(Box<Expr>, Box<Expr>, Option<Box<Expr>>), // Condition -> if -> else
+    IfElse(Box<Expr>, Box<Expr>, Option<Box<Expr>>), // Condition -> if -> else]
+    While(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Debug)]

@@ -3,7 +3,8 @@
 extern sin(rad: f64) f64;
 extern cos(rad: f64) f64;
 extern putf(f: f64);
-extern puti(i: i8);
+extern puti8(i: i8);
+extern puti64(i: i64);
 extern printf(c: i64);
 
 extern print_array(v: i64, count: i32);
@@ -23,10 +24,15 @@ fn main(argc: i32, argv: i64) i64 {
     let result: f64 = test_func(1.0, 1.0);
     print_array(argv, argc);
     if(1.0 == 0.9) {
-        puti(1.0 == 1.0);
+        puti8(1.0 == 1.0);
     }
     else {
         putf(3.0);
+    }
+    let i: i64 = 0;
+    while (i < 10) {
+        puti64(i);
+        i = i + 1;
     }
     putf(result);
     return 0;

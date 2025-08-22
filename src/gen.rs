@@ -30,15 +30,13 @@ impl VariableBuilder {
     }
 
     fn define_var(&mut self, builder: &mut FunctionBuilder, type_: Type) -> Variable {
-        let variable = Variable::new(self.index);
-        builder.declare_var(variable, type_);
+        let variable = builder.declare_var(type_);
         self.index += 1;
         variable
     }
 
     fn create_var(&mut self, builder: &mut FunctionBuilder, value: Value, type_: Type) -> Variable {
-        let variable = Variable::new(self.index);
-        builder.declare_var(variable, type_);
+        let variable = builder.declare_var(type_);
         self.index += 1;
         builder.def_var(variable, value);
         variable
@@ -50,6 +48,12 @@ struct CompiledFunction {
     id: FuncId,
     param_count: usize,
     return_count: usize,
+}
+
+struct VariableDef {
+    variable: Variable,
+    is_defined: bool,
+    type_: Type,
 }
 
 pub struct FunctionGenerator<'a> {
@@ -129,22 +133,49 @@ impl<'a> FunctionGenerator<'a> {
                 self.builder
                     .ins()
                     .brif(condition, if_block, &[], else_block, &[]);
+                self.builder.seal_block(if_block);
+                self.builder.seal_block(else_block);
 
                 self.builder.switch_to_block(if_block);
-                self.builder.seal_block(if_block);
 
-                let then = self.expr(then)?.value;
+                let _ = self.expr(then)?.value;
                 self.builder.ins().jump(cont_block, &[]);
 
                 self.builder.switch_to_block(else_block);
-                self.builder.seal_block(else_block);
                 if let Some(expr) = else_ {
-                    let else_ = self.expr(expr)?.value;
+                    let _ = self.expr(expr)?.value;
                 }
                 self.builder.ins().jump(cont_block, &[]);
+                self.builder.seal_block(cont_block);
 
                 self.builder.switch_to_block(cont_block);
+
+                ParseExpr::empty()
+            }
+            ExprType::While(condition, while_expr) => {
+                let condition_block = self.builder.create_block();
+                let while_block = self.builder.create_block();
+                let cont_block = self.builder.create_block();
+
+                self.builder.ins().jump(condition_block, &[]);
+
+                self.builder.switch_to_block(condition_block);
+                //  Checks condition
+                let condition = self.expr(condition)?.value.unwrap();
+                self.builder
+                    .ins()
+                    .brif(condition, while_block, &[], cont_block, &[]);
+                self.builder.seal_block(while_block);
                 self.builder.seal_block(cont_block);
+
+                // Executes loop and jumps back to condition check
+                self.builder.switch_to_block(while_block);
+                let _ = self.expr(while_expr)?.value;
+                self.builder.ins().jump(condition_block, &[]);
+                self.builder.seal_block(condition_block);
+
+                // Out of loop
+                self.builder.switch_to_block(cont_block);
 
                 ParseExpr::empty()
             }
@@ -166,6 +197,9 @@ impl<'a> FunctionGenerator<'a> {
                 },
                 None => ParseExpr::empty(),
             },
+            ExprType::Boolean(val) => {
+                ParseExpr::new(Some(self.builder.ins().iconst(types::I8, *val as i64)))
+            }
             ExprType::Variable(name) => match self.values.get(name) {
                 Some(&variable) => ParseExpr::new(Some(self.builder.use_var(variable))),
                 None => {
@@ -193,9 +227,15 @@ impl<'a> FunctionGenerator<'a> {
                         }
                         _ => return Err(Error::Unexpected("can't add this type")),
                     },
-                    BinaryOp::Minus => {
-                        ParseExpr::new(Some(self.builder.ins().fsub(left_value, right_value)))
-                    }
+                    BinaryOp::Minus => match left.type_ {
+                        typing::F64 | typing::F32 => {
+                            ParseExpr::new(Some(self.builder.ins().fsub(left_value, right_value)))
+                        }
+                        typing::I64 | typing::I32 | typing::I16 | typing::I8 => {
+                            ParseExpr::new(Some(self.builder.ins().isub(left_value, right_value)))
+                        }
+                        _ => return Err(Error::Unexpected("can't subtract this type")),
+                    },
                     BinaryOp::Times => {
                         ParseExpr::new(Some(self.builder.ins().fmul(left_value, right_value)))
                     }
@@ -212,11 +252,21 @@ impl<'a> FunctionGenerator<'a> {
                         ))),
                         _ => return Err(Error::Unexpected("can't compare this type")),
                     },
-                    BinaryOp::LessThan => ParseExpr::new(Some(self.builder.ins().fcmp(
-                        FloatCC::LessThan,
-                        left_value,
-                        right_value,
-                    ))),
+                    BinaryOp::LessThan => match left.type_ {
+                        typing::F64 | typing::F32 => ParseExpr::new(Some(self.builder.ins().fcmp(
+                            FloatCC::LessThan,
+                            left_value,
+                            right_value,
+                        ))),
+                        typing::I64 | typing::I32 | typing::I16 | typing::I8 => {
+                            ParseExpr::new(Some(self.builder.ins().icmp(
+                                IntCC::SignedLessThan,
+                                left_value,
+                                right_value,
+                            )))
+                        }
+                        _ => return Err(Error::Unexpected("can't compare this type")),
+                    },
                 }
             }
             ExprType::Call(name, args) => match self.functions.get(name) {
